@@ -12,7 +12,7 @@ use warnings;
 use Getopt::Long;
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $allowedmisses, $filters, $isNhit);
+my ($inputfile, $outputfile, $subjectdeffile, $allowedmisses, $filters, $isNhit, $inheritmodel);
 my $capturearray = 'NA';
 
 
@@ -24,6 +24,7 @@ GetOptions(
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
 	'capture:s' => \$capturearray,
+	'model:s' => \$inheritmodel,
 );
 
 if (!defined $inputfile) {
@@ -40,6 +41,9 @@ if (!defined $inputfile) {
 	optionUsage("option --N not defined\n");
 }
 
+if (!defined $inheritmodel) {
+	$inheritmodel = 'NA';
+}
 
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
@@ -50,7 +54,7 @@ if ($filters eq 'all' || $filters eq 'any') {
 
 
 my %GVStoexclude = (
-	# 'intron' => 1,
+	'intron' => 1,
 	'intergenic' => 1,
 	# 'coding-synonymous' => 1,
 	# 'coding-synonymous-near-splice' => 1,
@@ -71,7 +75,9 @@ while (<SUBJECTS>) {
 	my ($familyid, $subjectid, $father, $mother, $relation, $desiredgeno) = split("\t", $_);
 	$subjects{$subjectid} = [$familyid, $father, $mother, $relation, $desiredgeno];
 	push(@orderedsubjects, $subjectid);
-	$countuniquefamilies_hash{$familyid} = 1;
+	if ($subjectid !~ '#') {
+		$countuniquefamilies_hash{$familyid} = 1;
+	}
 }
 close SUBJECTS;
 my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
@@ -165,25 +171,7 @@ while ( <FILE> ) {
 		$polyphen = $line[15];
 		$inUWexomes = $line[16];
 		$UWexomescovered = $line[17];
-	} elsif ($inputfile =~ m/.vcf/ && $inputfile =~ m/.gz/) {
-		### THIS CODE IS INCOMPLETE; meant for dealing with single-sample vcfs (last ditch efforts)
-		# ($ref, $alt) = ($line[3], $line[4]);
-		# if (length($ref) == 1 && length($alt) == 1) {
-		# 	$reftype eq 'SNP';
-		# } else {
-		# 	$reftype eq 'indel';
-		# }
-		# $indbsnp = $line[2];
-		# $filterset = $line[6];
-		# $gene = $line[7];
-		# @subjectgenotypes = @line[@subjectcolumns];
-		# $functionimpact = $line[10];
-		# $phastcons = $line[13];
-		# $gerp = $line[14];
-		# $polyphen = $line[15];
-		# $inUWexomes = $line[16];
-		# $UWexomescovered = $line[17];
-	}
+	} 
 	
 	if (noveltyfunctionFilter(\%GVStoexclude, $functionimpact, $indbsnp, $inUWexomes, $UWexomescovered) && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 		my %checkfamilies;
@@ -197,56 +185,54 @@ while ( <FILE> ) {
 					$checkfamilies{$familyid}{'mother'} = -1;
 					$checkfamilies{$familyid}{'child'} = -1;
 				}
-				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno);
+				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);
 				
 				if ($relation eq 'father') {
 					$checkfamilies{$familyid}{'father'} = $ismatch; 
-					# if ($gene eq 'USP17') {
-						# print "$gene $ref $alt: $familyid father should be $desiredgeno match=$ismatch with genotype $genotype\n";				# DEBUG
-					# }
 				}
 				if ($relation eq 'mother') {
 					$checkfamilies{$familyid}{'mother'} = $ismatch; 
-					# if ($gene eq 'USP17') {
-						# print "$gene $ref $alt: $familyid mother should be $desiredgeno match=$ismatch with genotype $genotype\n";				# DEBUG
-					# }
 				}
 				if ($relation eq 'child') {
 					$checkfamilies{$familyid}{'child'} = $ismatch;
-					# if ($gene eq 'USP17') {
-						# print "$gene $ref $alt: $familyid child should be $desiredgeno $subjectid match=$ismatch with genotype $genotype ($ref, $alt)\n";				# DEBUG
-					# }
 				}
-			}
+			} 
 		}
 
 		my $countfamiliesmatch = 0;
-		my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-		
+		my @matchingfamilyids;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {
 			my %thisfamily = %{$thisfamily_ref};
-			
+
 			my $thisfamilymatch = 0;
-			my $familysize = 0;
-			while (my ($relation, $thismatch) = each %thisfamily) {
-				if ($thismatch != -1) {
-					$thisfamilymatch += $thismatch;
-					$familysize++;	
+			my $familysize = scalar(keys %thisfamily);
+
+			if ($inheritmodel eq 'compoundhet' && $familysize >= 3) {							# assumes trios; doesn't handle more than one affected child per family (yet)
+				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1 && $thisfamily{'child'} == 1) {
+					$countfamiliesmatch += 1;
+					${$genehits{$gene}{'families'}{$familyid}}[0] += $thisfamily{'father'};		#
+					${$genehits{$gene}{'families'}{$familyid}}[1] += $thisfamily{'mother'};		#
+					${$genehits{$gene}{'families'}{$familyid}}[2] += $thisfamily{'child'};		#
+				}
+			} else {
+				while (my ($relation, $thismatch) = each %thisfamily) {
+					if ($thismatch != -1) {
+						$thisfamilymatch += $thismatch;
+					}
+				}
+
+				if ($thisfamilymatch == $familysize) {
+					$countfamiliesmatch += 1;
+					push(@matchingfamilyids, $familyid);
+					$genehits{$gene}{'families'}{$familyid} += 1;
 				}
 			}
-
-			if ($thisfamilymatch == $familysize && $iserror == 0) {
-				$countfamiliesmatch += 1;
-				$genehits{$gene}{'families'}{$familyid} += 1;
-				# if ($gene eq 'VAMP4' && $line[1] == 171672593) {
-					# print "ID=$familyid; familysize=$familysize; familymatch=$thisfamilymatch; number of matching families=$countfamiliesmatch\n";						# DEBUG
-				# }
-			}
 		}
-		
-		if ($iserror == 0) {
+
+		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
-			push(@{$genehits{$gene}{'hits'}}, $data);
+			my $familiesmatching = join(',', @matchingfamilyids)
+			push(@{$genehits{$gene}{'hits'}}, "$data\t$familiesmatching");
 		}
 	}
 }
@@ -254,21 +240,62 @@ close FILE;
 
 
 
-# Process all genes and count number of hits
+# Check putative hit list for all genes and count number of valid hits
 
 my $countoutputvariants = 0;
 my $countkeptvariants = 0;
 my $counterrorvariants = 0;
 while (my ($gene, $results_ref) = each %genehits) {
 	my %hitdata = %{$results_ref};
-	my $countfamiliesmatch = scalar(keys %{$hitdata{'families'}});
-
+	
 	if (defined $hitdata{'hits'}) {
+		# filter out common variants and systematic errors
+		my @filteredoutput;
 		my @output = @{$hitdata{'hits'}};
+		foreach my $hit (@output) {
+			my @thishit = split("\t", $hit);
+			my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
+			my $familiesmatching = pop(@thishit);
+			my %matchingfamilyids = map {$_ => 1} split(/,/, $familiesmatching);
+			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
+			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+		
+			if ($iserror==1 || $iscommon==1) {
+				while (my($familyid, $familyhits_ref) = each %{$hitdata{'families'}}) {
+					if (defined $matchingfamilyids{$familyid}) {
+						if (ref($familyhits_ref) eq 'SCALAR') {
+							$hitdata{'families'}{$familyid}--;
+						} elsif (ref($familyhits_ref) eq 'ARRAY') {				### EXCLUDE VARIANT from trios/families under compound het model
+							my @familyhits = @{$familyhits_ref};
+							## subtract hit from the correct people in this family
+						}
+					}
+				}
+			} else {
+				push(@filteredoutput, @thishit);
+			}
+		}
+		
+		# after filtering for common/error variants, account for possible compound het model, then recount matching families
+		my $countfamiliesmatch = 0;
+		while (my($familyid, $familyhits_ref) = each %{$hitdata{'families'}}) {		
+			# compound het model only
+			if (ref($familyhits_ref) eq 'ARRAY') {													# if at least a trio
+				my @familyhits = @{$familyhits_ref};
+				if ($familyhits[0] >= 1 && $familyhits[1] >= 1 && $familyhits[2] >= 2) {			# if at least one variant each from mom and dad
+					$countfamiliesmatch++;
+				}
+			}	# end compound het model
+			if (ref($familyhits_ref) eq 'SCALAR') {
+				if ($familyhits_ref > 0) {
+					$countfamiliesmatch++;
+				}
+			}
+		}
+	
 		if ($countfamiliesmatch >= ($countuniquefamilies-$allowedmisses)) {
-			foreach my $hit (@output) {
+			foreach my $hit (@filteredoutput) {
 				$countoutputvariants++;
-				my ($hitchr, $hitpos, $hittype, $hitref, $hitalt, @thishit) = split("\t", $hit);
 				print OUT "$hit\n";
 			}
 		}
@@ -280,8 +307,9 @@ print "Matched $countoutputvariants out of $countinputvariants\n";
 
 
 
-sub removeCommon {
+sub isCommon {
 	# remove common variation (ESP and 1kG)
+	return 0;
 }
 
 
@@ -357,7 +385,7 @@ sub isSystematicError {
 
 
 sub checkGenoMatch {
-	my ($vartype, $ref, $alt, $genotype, $desiredgeno) = @_;
+	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit) = @_;
 		
 	my @alleles;
 	my $ismatch = 0;
@@ -426,6 +454,7 @@ sub optionUsage {
 	print "\t--GATKkeep\tGATK quality filters that should be kept, comma-delimited with no spaces\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--capture\tcapture array (optional: bigexome or v2)\n";
+	print "\t--model\toptional: compoundhet)\n";
 	die;
 }
 
