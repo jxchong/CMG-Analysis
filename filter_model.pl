@@ -56,10 +56,10 @@ if ($filters eq 'all' || $filters eq 'any') {
 my %GVStoexclude = (
 	'intron' => 1,
 	'intergenic' => 1,
-	# 'coding-synonymous' => 1,
+	'coding-synonymous' => 1,
 	# 'coding-synonymous-near-splice' => 1,
-	# 'utr-3' => 1,
-	# 'utr-5' => 1,
+	'utr-3' => 1,
+	'utr-5' => 1,
 	'near-gene-3' => 1,
 	'near-gene-5' => 1,
 );
@@ -200,20 +200,31 @@ while ( <FILE> ) {
 		}
 
 		my $countfamiliesmatch = 0;
-		my @matchingfamilyids;
+		my @matchingfamilyids = 'NA';
+		my @matchingtrioids = 'NA';
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {
 			my %thisfamily = %{$thisfamily_ref};
 
 			my $thisfamilymatch = 0;
-			my $familysize = scalar(keys %thisfamily);
-
+			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;			
 			if ($inheritmodel eq 'compoundhet' && $familysize >= 3) {							# assumes trios; doesn't handle more than one affected child per family (yet)
 				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1 && $thisfamily{'child'} == 1) {
 					$countfamiliesmatch += 1;
+					my $matchsubj;
+					if ($thisfamily{'father'} == 1) {
+						$matchsubj = 'father';
+					}
+					if ($thisfamily{'mother'} == 1) {
+						$matchsubj = 'mother';
+					}
+					push(@matchingfamilyids, $familyid);
+					push(@matchingtrioids, [$familyid, $matchsubj]);
 					${$genehits{$gene}{'families'}{$familyid}}[0] += $thisfamily{'father'};		#
 					${$genehits{$gene}{'families'}{$familyid}}[1] += $thisfamily{'mother'};		#
 					${$genehits{$gene}{'families'}{$familyid}}[2] += $thisfamily{'child'};		#
 				}
+			} elsif ($inheritmodel eq 'compoundhet' && $familysize == 1) {
+				
 			} else {
 				while (my ($relation, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
@@ -231,8 +242,9 @@ while ( <FILE> ) {
 
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
-			my $familiesmatching = join(',', @matchingfamilyids)
-			push(@{$genehits{$gene}{'hits'}}, "$data\t$familiesmatching");
+			my $familiesmatching = join(',', @matchingfamilyids);
+			my $triosmatching = join(',', @matchingtrioids);
+			push(@{$genehits{$gene}{'hits'}}, [$data, $familiesmatching, $triosmatching]);
 		}
 	}
 }
@@ -253,26 +265,36 @@ while (my ($gene, $results_ref) = each %genehits) {
 		my @filteredoutput;
 		my @output = @{$hitdata{'hits'}};
 		foreach my $hit (@output) {
-			my @thishit = split("\t", $hit);
+			my $hitvarinfo = ${$hit}[0];
+			my @thishit = split("\t", $hitvarinfo);
 			my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
-			my $familiesmatching = pop(@thishit);
+			my $familiesmatching = ${$hit}[1];
 			my %matchingfamilyids = map {$_ => 1} split(/,/, $familiesmatching);
+			my $triosmatching = ${$hit}[2];
+			my %matchingtrioids = map {$_ => 1} split(/,/, $triosmatching);
 			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
 			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
 		
 			if ($iserror==1 || $iscommon==1) {
+				$counterrorvariants++;
 				while (my($familyid, $familyhits_ref) = each %{$hitdata{'families'}}) {
 					if (defined $matchingfamilyids{$familyid}) {
 						if (ref($familyhits_ref) eq 'SCALAR') {
 							$hitdata{'families'}{$familyid}--;
-						} elsif (ref($familyhits_ref) eq 'ARRAY') {				### EXCLUDE VARIANT from trios/families under compound het model
-							my @familyhits = @{$familyhits_ref};
-							## subtract hit from the correct people in this family
+						} elsif (ref($familyhits_ref) eq 'ARRAY') {				### EXCLUDE variants from trios/families under compound het model
+							# a total hack, but retrieve whether the father or mother passed on the variant
+							if (defined $matchingtrioids{"$familyid-father"}) {
+								${$familyhits_ref}[0]--;							# subtract hit from father
+							}
+							if (defined $matchingtrioids{"$familyid-father"}) {
+								${$familyhits_ref}[1]--;							# subtract hit from mother
+							}
+							${$familyhits_ref}[2]--;							# subtract hit from child
 						}
 					}
 				}
 			} else {
-				push(@filteredoutput, @thishit);
+				push(@filteredoutput, $hitvarinfo);
 			}
 		}
 		
@@ -303,11 +325,11 @@ while (my ($gene, $results_ref) = each %genehits) {
 }
 
 
-print "Matched $countoutputvariants out of $countinputvariants\n";
+print "Matched $countoutputvariants out of $countinputvariants, $counterrorvariants additional possible hits excluded\n";
 
 
 
-sub isCommon {
+sub isCommonVar {
 	# remove common variation (ESP and 1kG)
 	return 0;
 }
@@ -334,13 +356,13 @@ sub noveltyfunctionFilter {
 	if (!defined ${$GVStoexclude_ref}{$functionimpact}) {
 		$score += 1;
 	}
-	if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
-		$score += 1;
-	}
+	# if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
+	# 	$score += 1;
+	# }
 	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
 		$score += 1;
 	}
-	if ($score == 3) {
+	if ($score == 2) {
 		return 1;
 	} else {
 		return 0;
