@@ -173,7 +173,7 @@ while ( <FILE> ) {
 		$UWexomescovered = $line[17];
 	} 
 	
-	if (noveltyfunctionFilter(\%GVStoexclude, $functionimpact, $indbsnp, $inUWexomes, $UWexomescovered) && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
+	if (isNovel($indbsnp, $inUWexomes, $UWexomescovered)==1 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 		my %checkfamilies;
 		for (my $i=0; $i<=$#subjectgenotypes; $i++) {
 			my $genotype = $subjectgenotypes[$i];
@@ -238,7 +238,6 @@ while ( <FILE> ) {
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
 			push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingtrios]);							# store this as a hit
-			# print "hit at $gene: $data\n\n";
 		}
 	}
 }
@@ -247,56 +246,79 @@ close FILE;
 
 
 # Check putative hit list for all genes and count number of valid hits
-print "Excluding common variants and systematic errors\n";
-print "Counting hits in each family for each gene\n";
-print "Checking number of families with hits\n";
-
-
+print "\n... Checking all genes for desired number of hits in desired number of families\n";
 my $countoutputvariants = 0;
 my $countkeptvariants = 0;
 my $counterrorvariants = 0;
 my $genecounter = 0;
+my $totalgenes = scalar(keys %genehits);
 while (my ($gene, $results_ref) = each %genehits) {
 	$genecounter++;
-	print "Checking gene #$genecounter (of ".scalar(keys %genehits).") for hits\n";
+	# print "\n===========================================================================\n";
+	if ($genecounter % 1000 == 0) {
+		print "Checking gene #$genecounter (out of $totalgenes) for hits\n";
+	}
 	my @hitdata = @{$results_ref};
 	
-	# filter out common variants and systematic errors
-	my @filteredoutput;
-	foreach my $hit (@hitdata) {
-		my $hitvarinfo = ${$hit}[0];
-			my @thishit = split("\t", $hitvarinfo);
-			my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
-		my %matchingfamilies = %{${$hit}[1]};
-		my %matchingtrios = %{${$hit}[2]};
-		my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-		my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
-		if ($iserror==0 || $iscommon==0) {
-			push(@filteredoutput, $hit);
+	# account for possible compound het model, then count hits in each family for this gene
+	# do before filtering of common variants and systematic errors for increased efficiency (data access, even by tabix, is slower)
+	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
+	# review all families for required number of hits in this gene
+	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $allowedmisses);													
+	
+	if ($enoughfamilieshavehits == 1) {
+		# filter out common variants and systematic errors
+		my @filteredoutput;
+		foreach my $hit (@hitdata) {
+			my $hitvarinfo = ${$hit}[0];
+				my @thishit = split("\t", $hitvarinfo);
+				my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
+			my %matchingfamilies = %{${$hit}[1]};
+			my %matchingtrios = %{${$hit}[2]};
+			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
+			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+			if ($iserror==1 || $iscommon==1) {
+				push(@filteredoutput, $hit);
+			} else {
+				$counterrorvariants++;
+			}
+		}
+		
+		# after filtering, recheck to make sure enough families still have enough hits in this gene, then output results
+		my $resultsFamiliesvsModel_ref_postfilter = checkFamiliesvsModel(\@filteredoutput, $inheritmodel);
+		my $enoughfamilieshavehits_postfilter = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $allowedmisses);													
+		if ($enoughfamilieshavehits_postfilter == 1) {
+			print "... Printing hits for this gene ($gene)\n";
+		  	foreach my $hit (@filteredoutput) {
+		  		my $hitvarinfo = ${$hit}[0];
+		  		$countoutputvariants++;
+		  		print OUT "$hitvarinfo\n";
+		  	}
 		} else {
-			$counterrorvariants++;
+			print "... After filtering, no hits left for this gene ($gene)\n";
 		}
 	}
+}
 
-		
-	# after filtering for common/error variants, account for possible compound het model, then recount matching families
+print "... Matched $countoutputvariants out of $countinputvariants, $counterrorvariants additional possible hits excluded\n";
+
+
+
+
+sub checkFamiliesvsModel {
+	# account for possible compound het model, then recount matching families
+	my ($inputhitdata_ref, $inheritmodel) = @_;
 	my %familieswHitsinGene;
-	foreach my $hit (@filteredoutput) {
+	foreach my $hit (@{$inputhitdata_ref}) {
 		my $hitvarinfo = ${$hit}[0];
 			my @thishit = split("\t", $hitvarinfo);
 		my %matchingfamilies = %{${$hit}[1]};
 		my %matchingtrios = %{${$hit}[2]};
-		
-		# if ($gene eq 'AIM1L') {																							# DEBUG
-			# print "@thishit\n";																							# DEBUG
-		# }																												# DEBUG				
+
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
-			$familieswHitsinGene{$familyid}++;
-			# if ($gene eq 'AIM1L') {																						# DEBUG
-			# 	print "family $familyid is a match $ismatch: total $familieswHitsinGene{$familyid}\n";					# DEBUG
-			# }																											# DEBUG
+			$familieswHitsinGene{$familyid}++;																										# DEBUG
 		}
-		
+
 		if ($inheritmodel eq 'compoundhet') {
 			while (my($familyid, $matchsubj) = each %matchingtrios) {
 				if (!defined $familieswHitsinGene{$familyid}) {
@@ -309,22 +331,22 @@ while (my ($gene, $results_ref) = each %genehits) {
 			}
 		}
 	}
+	return \%familieswHitsinGene;
+}
+
+
+sub checkFamiliesforHits {
+	my($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $allowedmisses) = @_;
+	my %familieswHitsinGene = %{$resultsFamiliesvsModel_ref};
 	
-	# review all families for this gene
 	my $countfamiliesmatch = 0;
-	while (my($familyid, $familyhits) = each %familieswHitsinGene) {
-		# if ($gene eq 'AIM1L') {																						# DEBUG
-			# print "family $familyid type=".ref($familyhits)." has total $familyhits\n";														# DEBUG
-		# }																											# DEBUG
+	while (my($familyid, $familyhits) = each %familieswHitsinGene) {																										# DEBUG
 		if ($inheritmodel eq 'compoundhet') {
 			if (ref($familyhits) eq 'HASH') {
 				if (${$familyhits}{'child'} >= 2 && ${$familyhits}{'father'} >= 1 && ${$familyhits}{'mother'} >= 1) {
 					$countfamiliesmatch++;
 				}
-			} elsif (!ref($familyhits)) {
-				# if ($gene eq 'AIM1L') {																						# DEBUG
-					# print "$familyid familytype=".ref($familyhits)." has $familyhits: total families $countfamiliesmatch\n";								# DEBUG
-				# }																											# DEBUG
+			} elsif (!ref($familyhits)) {																										# DEBUG
 				if ($familyhits >= 2) {
 					$countfamiliesmatch++;
 				}
@@ -336,17 +358,14 @@ while (my ($gene, $results_ref) = each %genehits) {
 		}
 	}
 	
+	# if desired number of families have hits in gene
 	if ($countfamiliesmatch >= ($countuniquefamilies-$allowedmisses)) {
-		foreach my $hit (@filteredoutput) {
-			my $hitvarinfo = ${$hit}[0];
-			$countoutputvariants++;
-			print OUT "$hitvarinfo\n";
-		}
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
-
-print "Matched $countoutputvariants out of $countinputvariants, $counterrorvariants additional possible hits excluded\n";
 
 
 
@@ -371,19 +390,29 @@ sub checkGATKfilters {
 }
 
 
-sub noveltyfunctionFilter {
-	my ($GVStoexclude_ref, $functionimpact, $indbsnp, $inUWexomes, $UWexomescovered) = @_;
+sub isNovel {
+	my ($indbsnp, $inUWexomes, $UWexomescovered) = @_;
 	my $score = 0;
-	if (!defined ${$GVStoexclude_ref}{$functionimpact}) {
-		$score += 1;
-	}
 	if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
 		$score += 1;
 	}
 	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
 		$score += 1;
 	}
-	if ($score >= 1) {
+	if ($score >= 2) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+sub shouldfunctionFilter {
+	my ($GVStoexclude_ref, $functionimpact) = @_;
+	my $score = 0;
+	if (defined ${$GVStoexclude_ref}{$functionimpact}) {
+		$score += 1;
+	}
+	if ($score > 0) {
 		return 1;
 	} else {
 		return 0;
