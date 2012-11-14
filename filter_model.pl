@@ -255,7 +255,10 @@ print "Checking number of families with hits\n";
 my $countoutputvariants = 0;
 my $countkeptvariants = 0;
 my $counterrorvariants = 0;
+my $genecounter = 0;
 while (my ($gene, $results_ref) = each %genehits) {
+	$genecounter++;
+	print "Checking gene #$genecounter (of ".scalar(keys %genehits).") for hits\n";
 	my @hitdata = @{$results_ref};
 	
 	# filter out common variants and systematic errors
