@@ -200,8 +200,8 @@ while ( <FILE> ) {
 		}
 
 		my $countfamiliesmatch = 0;
-		my @matchingfamilyids = 'NA';
-		my @matchingtrioids = 'NA';
+		my %matchingfamilies;
+		my %matchingtrios;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {
 			my %thisfamily = %{$thisfamily_ref};
 
@@ -217,14 +217,9 @@ while ( <FILE> ) {
 					if ($thisfamily{'mother'} == 1) {
 						$matchsubj = 'mother';
 					}
-					push(@matchingfamilyids, $familyid);
-					push(@matchingtrioids, [$familyid, $matchsubj]);
-					${$genehits{$gene}{'families'}{$familyid}}[0] += $thisfamily{'father'};		#
-					${$genehits{$gene}{'families'}{$familyid}}[1] += $thisfamily{'mother'};		#
-					${$genehits{$gene}{'families'}{$familyid}}[2] += $thisfamily{'child'};		#
+					$matchingtrios{$familyid} = $matchsubj;	
+					# print "hit for trio $familyid\n";
 				}
-			} elsif ($inheritmodel eq 'compoundhet' && $familysize == 1) {
-				
 			} else {
 				while (my ($relation, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
@@ -234,18 +229,20 @@ while ( <FILE> ) {
 
 				if ($thisfamilymatch == $familysize) {
 					$countfamiliesmatch += 1;
-					push(@matchingfamilyids, $familyid);
-					$genehits{$gene}{'families'}{$familyid} += 1;
+					$matchingfamilies{$familyid} = 1;
+					# print "hit for family $familyid\n";
 				}
 			}
 		}
 
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
-			my $familiesmatching = join(',', @matchingfamilyids);
-			my $triosmatching = join(',', @matchingtrioids);
-			push(@{$genehits{$gene}{'hits'}}, [$data, $familiesmatching, $triosmatching]);
+			push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingtrios]);							# store this as a hit
+			# print "hit at $gene: $data\n\n";
 		}
+	}
+	if ($chr == 2) {
+		last;
 	}
 }
 close FILE;
@@ -258,68 +255,88 @@ my $countoutputvariants = 0;
 my $countkeptvariants = 0;
 my $counterrorvariants = 0;
 while (my ($gene, $results_ref) = each %genehits) {
-	my %hitdata = %{$results_ref};
+	my @hitdata = @{$results_ref};
 	
-	if (defined $hitdata{'hits'}) {
-		# filter out common variants and systematic errors
-		my @filteredoutput;
-		my @output = @{$hitdata{'hits'}};
-		foreach my $hit (@output) {
-			my $hitvarinfo = ${$hit}[0];
+	# filter out common variants and systematic errors
+	my @filteredoutput;
+	foreach my $hit (@hitdata) {
+		my $hitvarinfo = ${$hit}[0];
 			my @thishit = split("\t", $hitvarinfo);
 			my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
-			my $familiesmatching = ${$hit}[1];
-			my %matchingfamilyids = map {$_ => 1} split(/,/, $familiesmatching);
-			my $triosmatching = ${$hit}[2];
-			my %matchingtrioids = map {$_ => 1} split(/,/, $triosmatching);
-			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+		my %matchingfamilies = %{${$hit}[1]};
+		my %matchingtrios = %{${$hit}[2]};
+		my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
+		my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+		if ($iserror==0 || $iscommon==0) {
+			push(@filteredoutput, $hit);
+		} else {
+			$counterrorvariants++;
+		}
+	}
+
 		
-			if ($iserror==1 || $iscommon==1) {
-				$counterrorvariants++;
-				while (my($familyid, $familyhits_ref) = each %{$hitdata{'families'}}) {
-					if (defined $matchingfamilyids{$familyid}) {
-						if (ref($familyhits_ref) eq 'SCALAR') {
-							$hitdata{'families'}{$familyid}--;
-						} elsif (ref($familyhits_ref) eq 'ARRAY') {				### EXCLUDE variants from trios/families under compound het model
-							# a total hack, but retrieve whether the father or mother passed on the variant
-							if (defined $matchingtrioids{"$familyid-father"}) {
-								${$familyhits_ref}[0]--;							# subtract hit from father
-							}
-							if (defined $matchingtrioids{"$familyid-father"}) {
-								${$familyhits_ref}[1]--;							# subtract hit from mother
-							}
-							${$familyhits_ref}[2]--;							# subtract hit from child
-						}
-					}
-				}
-			} else {
-				push(@filteredoutput, $hitvarinfo);
-			}
+	# after filtering for common/error variants, account for possible compound het model, then recount matching families
+	my %familieswHitsinGene;
+	foreach my $hit (@filteredoutput) {
+		my $hitvarinfo = ${$hit}[0];
+			my @thishit = split("\t", $hitvarinfo);
+		my %matchingfamilies = %{${$hit}[1]};
+		my %matchingtrios = %{${$hit}[2]};
+		
+		# if ($gene eq 'AIM1L') {																							# DEBUG
+			# print "@thishit\n";																							# DEBUG
+		# }																												# DEBUG				
+		while (my($familyid, $ismatch) = each %matchingfamilies) {
+			$familieswHitsinGene{$familyid}++;
+			# if ($gene eq 'AIM1L') {																						# DEBUG
+			# 	print "family $familyid is a match $ismatch: total $familieswHitsinGene{$familyid}\n";					# DEBUG
+			# }																											# DEBUG
 		}
 		
-		# after filtering for common/error variants, account for possible compound het model, then recount matching families
-		my $countfamiliesmatch = 0;
-		while (my($familyid, $familyhits_ref) = each %{$hitdata{'families'}}) {		
-			# compound het model only
-			if (ref($familyhits_ref) eq 'ARRAY') {													# if at least a trio
-				my @familyhits = @{$familyhits_ref};
-				if ($familyhits[0] >= 1 && $familyhits[1] >= 1 && $familyhits[2] >= 2) {			# if at least one variant each from mom and dad
-					$countfamiliesmatch++;
+		if ($inheritmodel eq 'compoundhet') {
+			while (my($familyid, $matchsubj) = each %matchingtrios) {
+				if (!defined $familieswHitsinGene{$familyid}) {
+					$familieswHitsinGene{$familyid}{'father'} = 0;
+					$familieswHitsinGene{$familyid}{'mother'} = 0;
+					$familieswHitsinGene{$familyid}{'child'} = 0;
 				}
-			}	# end compound het model
-			if (ref($familyhits_ref) eq 'SCALAR') {
-				if ($familyhits_ref > 0) {
-					$countfamiliesmatch++;
-				}
+				$familieswHitsinGene{$familyid}{$matchsubj}++;
+				$familieswHitsinGene{$familyid}{'child'}++;
 			}
 		}
+	}
 	
-		if ($countfamiliesmatch >= ($countuniquefamilies-$allowedmisses)) {
-			foreach my $hit (@filteredoutput) {
-				$countoutputvariants++;
-				print OUT "$hit\n";
+	# review all families for this gene
+	my $countfamiliesmatch = 0;
+	while (my($familyid, $familyhits) = each %familieswHitsinGene) {
+		# if ($gene eq 'AIM1L') {																						# DEBUG
+			# print "family $familyid type=".ref($familyhits)." has total $familyhits\n";														# DEBUG
+		# }																											# DEBUG
+		if ($inheritmodel eq 'compoundhet') {
+			if (ref($familyhits) eq 'HASH') {
+				if (${$familyhits}{'child'} >= 2 && ${$familyhits}{'father'} >= 1 && ${$familyhits}{'mother'} >= 1) {
+					$countfamiliesmatch++;
+				}
+			} elsif (!ref($familyhits)) {
+				# if ($gene eq 'AIM1L') {																						# DEBUG
+					# print "$familyid familytype=".ref($familyhits)." has $familyhits: total families $countfamiliesmatch\n";								# DEBUG
+				# }																											# DEBUG
+				if ($familyhits >= 2) {
+					$countfamiliesmatch++;
+				}
 			}
+		} else {
+			if ($familyhits >= 1) {
+				$countfamiliesmatch++;
+			}
+		}
+	}
+	
+	if ($countfamiliesmatch >= ($countuniquefamilies-$allowedmisses)) {
+		foreach my $hit (@filteredoutput) {
+			my $hitvarinfo = ${$hit}[0];
+			$countoutputvariants++;
+			print OUT "$hitvarinfo\n";
 		}
 	}
 }
