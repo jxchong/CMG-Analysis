@@ -241,15 +241,16 @@ while ( <FILE> ) {
 			# print "hit at $gene: $data\n\n";
 		}
 	}
-	if ($chr == 2) {
-		last;
-	}
 }
 close FILE;
 
 
 
 # Check putative hit list for all genes and count number of valid hits
+print "Excluding common variants and systematic errors\n";
+print "Counting hits in each family for each gene\n";
+print "Checking number of families with hits\n";
+
 
 my $countoutputvariants = 0;
 my $countkeptvariants = 0;
@@ -373,13 +374,13 @@ sub noveltyfunctionFilter {
 	if (!defined ${$GVStoexclude_ref}{$functionimpact}) {
 		$score += 1;
 	}
-	# if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
-	# 	$score += 1;
-	# }
+	if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
+		$score += 1;
+	}
 	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
 		$score += 1;
 	}
-	if ($score == 2) {
+	if ($score >= 1) {
 		return 1;
 	} else {
 		return 0;
