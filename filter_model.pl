@@ -128,6 +128,7 @@ while ( <FILE> ) {
 		print "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
 		print "Excluding variants in systematic error file for $capturearray\n";
 		print "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
+		print "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
 		$printparams = 1;
 	}
 	
