@@ -12,7 +12,7 @@ use warnings;
 use Getopt::Long;
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $allowedmisses, $filters, $isNhit, $inheritmodel);
+my ($inputfile, $outputfile, $subjectdeffile, $allowedmisses, $filters, $isNhit, $inheritmodel, $mafcutoff);
 my $capturearray = 'NA';
 
 
@@ -25,6 +25,7 @@ GetOptions(
 	'N=s' => \$isNhit,
 	'capture:s' => \$capturearray,
 	'model:s' => \$inheritmodel,
+	'mafcutoff:f' => \$mafcutoff,
 );
 
 if (!defined $inputfile) {
@@ -41,6 +42,9 @@ if (!defined $inputfile) {
 	optionUsage("option --N not defined\n");
 }
 
+if (!defined $mafcutoff) {
+	$mafcutoff = 0.01;
+}
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
 }
@@ -173,7 +177,7 @@ while ( <FILE> ) {
 		$UWexomescovered = $line[17];
 	} 
 	
-	if (isNovel($indbsnp, $inUWexomes, $UWexomescovered)==1 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
+	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 		my %checkfamilies;
 		for (my $i=0; $i<=$#subjectgenotypes; $i++) {
 			my $genotype = $subjectgenotypes[$i];
@@ -276,11 +280,11 @@ while (my ($gene, $results_ref) = each %genehits) {
 			my %matchingfamilies = %{${$hit}[1]};
 			my %matchingtrios = %{${$hit}[2]};
 			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt,$mafcutoff);
 			if ($iserror==1 || $iscommon==1) {
-				push(@filteredoutput, $hit);
-			} else {
 				$counterrorvariants++;
+			} else {
+				push(@filteredoutput, $hit);
 			}
 		}
 		
@@ -295,7 +299,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 		  		print OUT "$hitvarinfo\n";
 		  	}
 		} else {
-			print "... After filtering, no hits left for this gene ($gene)\n";
+			# print "... After filtering, no hits left for this gene ($gene)\n";
 		}
 	}
 }
@@ -369,14 +373,6 @@ sub checkFamiliesforHits {
 
 
 
-sub isCommonVar {
-	# remove common variation (ESP and 1kG)
-	return 0;
-}
-
-
-
-
 sub checkGATKfilters {
 	my ($allowedfilters_ref, $filterset) = @_;
 	my @thesefilters = split(';', $filterset);
@@ -389,21 +385,20 @@ sub checkGATKfilters {
 	return $keep;
 }
 
-
 sub isNovel {
-	my ($indbsnp, $inUWexomes, $UWexomescovered) = @_;
-	my $score = 0;
-	if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
-		$score += 1;
-	}
-	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
-		$score += 1;
-	}
-	if ($score >= 2) {
+	# my ($indbsnp, $inUWexomes, $UWexomescovered) = @_;
+	# my $score = 0;
+	# if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
+	# 	$score += 1;
+	# }
+	# if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
+	# 	$score += 1;
+	# }
+	# if ($score >= 2) {
 		return 1;
-	} else {
-		return 0;
-	}
+	# } else {
+		# return 0;
+	# }
 }
 
 sub shouldfunctionFilter {
@@ -419,8 +414,61 @@ sub shouldfunctionFilter {
 	}
 }
 
+sub isCommonVar {
+	# remove common variation (ESP and 1kG)
+	my ($targetchr, $targetpos, $targettype, $targetref, $targetalt, $mafcutoff) = @_;
+	my $iscommon = 0;
+	
+	my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
+	my $thousandgenomesfile = "$commonvarpath/phase1_release_v3.20101123.snps_indels_svs.sites.vcf.gz";
+	my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";
+	my $espindelsfile = "$commonvarpath/esp6500_indels.frq";
+		
+	if ($targettype =~ m/snp/i) {
+		my @varatsamepos = `tabix $espSNPsfile $targetchr:$targetpos-$targetpos`;
+		foreach my $variant (@varatsamepos) {
+			my ($varchr, $varpos, $rsid, $varref, $varalt, @vardata) = split("\t", $variant);
+			$vardata[2] =~ /MAF=((\.|\d|,)+);/;
+			my @popMAFs = split(",", $1);
+			if ($varpos == $targetpos && $varref eq $targetref && $varalt eq $targetalt) {
+				foreach my $varmaf (@popMAFs) {
+					my $actualmaf = $varmaf/100;						# in ESP, allele freqs reported as percentages
+					if ($actualmaf > $mafcutoff) {
+						$iscommon = 1;
+					}
+				}
+			}
+		}
+		if ($iscommon == 0) {
+			# since it's a bit slower, only check 1000 Genomes if this variant is not in ESP
+			my @varatsamepos = `tabix $thousandgenomesfile $targetchr:$targetpos-$targetpos`;
+			foreach my $variant (@varatsamepos) {
+				my ($varchr, $varpos, $rsid, $varref, $varalt, @vardata) = split("\t", $variant);
+				my @populations = qw(ASN AMR AFR EUR);
+				my @popMAFs;
+				foreach my $population (@populations) {
+					my $maffield = $population."_AF";
+					$vardata[2] =~ m/;$maffield=((\.|\d)+)/;
+					if (defined $1) {
+						push(@popMAFs, $1);
+					}
+				}
+				if ($varpos == $targetpos && $varref eq $targetref && $varalt eq $targetalt) {
+					foreach my $varmaf (@popMAFs) {
+						if ($varmaf > $mafcutoff) {
+							$iscommon = 1;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	return $iscommon;
+}
 
 sub isSystematicError {
+	# remove systematic errors
 	my ($targetchr, $targetpos, $targettype, $targetref, $targetalt, $capturearray) = @_;
 		
 	my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2012_oct';
