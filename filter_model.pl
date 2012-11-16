@@ -40,22 +40,17 @@ if (!defined $inputfile) {
 	optionUsage("option --GATKkeep not defined\n");
 } elsif (!defined $isNhit) {
 	optionUsage("option --N not defined\n");
-}
-
-if (!defined $mafcutoff) {
+} elsif (!defined $mafcutoff) {
 	$mafcutoff = 0.01;
-}
-if (!defined $inheritmodel) {
+} elsif (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
 }
-
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
 } else {
 	%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 }
-
 
 my %GVStoexclude = (
 	'intron' => 1,
@@ -69,6 +64,11 @@ my %GVStoexclude = (
 );
 
 
+my $logfile = "$outputfile.log";
+open (LOG, ">$logfile") or die "Cannot write to $logfile: $!.\n";
+print LOG "input=$inputfile\n";
+print LOG "output=$outputfile\n";
+print LOG "subjectreq=$subjectdeffile\n";
 
 my %countuniquefamilies_hash;
 my @orderedsubjects;
@@ -76,15 +76,19 @@ my %subjects;
 open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 while (<SUBJECTS>) {
 	$_ =~ s/\s+$//;					# Remove line endings
+	print LOG "$_\n";
 	my ($familyid, $subjectid, $father, $mother, $relation, $desiredgeno) = split("\t", $_);
 	$subjects{$subjectid} = [$familyid, $father, $mother, $relation, $desiredgeno];
 	push(@orderedsubjects, $subjectid);
 	if ($subjectid !~ '#') {
 		$countuniquefamilies_hash{$familyid} = 1;
+	} else {
+		print LOG "$subjectid is being skipped in this analysis\n";
 	}
 }
 close SUBJECTS;
 my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
+print LOG "\n";
 
 
 my %genehits;
@@ -125,10 +129,13 @@ while ( <FILE> ) {
 		if ($capturearray eq 'NA') {
 			$capturearray = 'bigexome';
 		}
-		print "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
-		print "Excluding variants in systematic error file for $capturearray\n";
-		print "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
-		print "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
+		print LOG "Allowing up to $allowedmisses subjects/families to miss having a variant in a given gene\n";
+		print LOG "Missing genotypes/no calls are counted as: $isNhit\n";
+		print LOG "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
+		print LOG "Excluding variants in systematic error file for $capturearray\n";
+		print LOG "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
+		print LOG "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
+		print LOG "Compound het analysis? $inheritmodel\n";
 		$printparams = 1;
 	}
 	
@@ -163,6 +170,7 @@ while ( <FILE> ) {
 		}
 		if ($inputfile =~ m/indels/) {
 			# ($vartype, $ref, $alt) = ('indel', $line[3], $line[4]);		# complicated parsing; not implemented
+			die "Have not implemented parsing of this file format yet\n";
 		}
 	} elsif ($inputfile =~ m/SSAnnotation/) {
 		($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
@@ -176,7 +184,14 @@ while ( <FILE> ) {
 		$polyphen = $line[15];
 		$inUWexomes = $line[16];
 		$UWexomescovered = $line[17];
+	} else {
+		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
+	
+	# Check that user input corresponds to input data files
+	if (scalar(@subjectgenotypes) != scalar(@orderedsubjects)) {
+		die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@subjectgenotypes).") in the input data file ($inputfile)\n";
+	}
 	
 	# if (isNovel($indbsnp, $inUWexomes, $UWexomescovered) && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
@@ -212,7 +227,8 @@ while ( <FILE> ) {
 			my %thisfamily = %{$thisfamily_ref};
 
 			my $thisfamilymatch = 0;
-			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;			
+			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
+			# print "family $familyid is size=$familysize\n";		
 			if ($inheritmodel eq 'compoundhet' && $familysize >= 3) {							# assumes trios; doesn't handle more than one affected child per family (yet)
 				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1 && $thisfamily{'child'} == 1) {
 					$countfamiliesmatch += 1;
@@ -224,7 +240,7 @@ while ( <FILE> ) {
 						$matchsubj = 'mother';
 					}
 					$matchingtrios{$familyid} = $matchsubj;	
-					# print "hit for trio $familyid\n";
+					# print "$gene, chr$chr:$pos = hit for trio $familyid\n";
 				}
 			} else {
 				while (my ($relation, $thismatch) = each %thisfamily) {
@@ -236,7 +252,7 @@ while ( <FILE> ) {
 				if ($thisfamilymatch == $familysize) {
 					$countfamiliesmatch += 1;
 					$matchingfamilies{$familyid} = 1;
-					# print "hit for family $familyid\n";
+					# print "$gene, chr$chr:$pos = hit for family $familyid\n";
 				}
 			}
 		}
@@ -246,9 +262,9 @@ while ( <FILE> ) {
 			push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingtrios]);							# store this as a hit
 		}
 	}
-	if ($chr == 3) {
-		last;
-	}
+	# if ($chr == 3) {
+	# 	last;
+	# }
 }
 close FILE;
 
@@ -256,10 +272,13 @@ close FILE;
 
 # Check putative hit list for all genes and count number of valid hits
 print "\nChecking all genes for desired number of hits in desired number of families\n";
+my $countgeneswhits = 0;
+my $countgenesrejectedhits = 0;
 my $countoutputvariants = 0;
 my $countkeptvariants = 0;
 my $counterrorvariants = 0;
 my $countcommonvariants = 0;
+my $countexcludedvariants = 0;
 my $genecounter = 0;
 my $totalgenes = scalar(keys %genehits);
 while (my ($gene, $results_ref) = each %genehits) {
@@ -289,10 +308,14 @@ while (my ($gene, $results_ref) = each %genehits) {
 			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt,$mafcutoff);
 			if ($iserror==1) {
 				$counterrorvariants++;
-			} elsif ($iscommon==1) {
+			}
+			if ($iscommon==1) {
 				$countcommonvariants++;
-			} else {
+			}
+			if ($iserror==0 && $iscommon==0) {
 				push(@filteredoutput, $hit);
+			} else {
+				$countexcludedvariants++;
 			}
 		}
 		
@@ -300,6 +323,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 		my $resultsFamiliesvsModel_ref_postfilter = checkFamiliesvsModel(\@filteredoutput, $inheritmodel);
 		my $enoughfamilieshavehits_postfilter = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $allowedmisses);													
 		if ($enoughfamilieshavehits_postfilter == 1) {
+			$countgeneswhits++;
 			# print "... Printing hits for this gene ($gene)\n";
 		  	foreach my $hit (@filteredoutput) {
 		  		my $hitvarinfo = ${$hit}[0];
@@ -307,14 +331,19 @@ while (my ($gene, $results_ref) = each %genehits) {
 		  		print OUT "$hitvarinfo\n";
 		  	}
 		} else {
+			$countgenesrejectedhits++;
 			# print "... After filtering, no hits left for this gene ($gene)\n";
 		}
 	}
 }
 
-print "Matched $countoutputvariants variants out of $countinputvariants.\n";
-print "Additional possible hits excluded for being systematic errors; N=$counterrorvariants are errors and N=$countcommonvariants are common variants\n";
+print LOG "\nResults summary:\n";
+print LOG "In $countgeneswhits gene(s), matched $countoutputvariants variants\n";
+print LOG "Total $countinputvariants variants examined from input\n";
+print LOG "Total $countexcludedvariants additional possible hits in $countgenesrejectedhits gene(s) were excluded\n";
+print LOG "N=$counterrorvariants are systematic errors and N=$countcommonvariants are common variants\n";
 
+close LOG;
 
 
 sub isCommonVar {
@@ -376,7 +405,7 @@ sub isSystematicError {
 		
 	my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2012_oct';
 	my ($snperrorsfile, $indelerrorsfile);
-	if ($capturearray eq 'bigexome') {
+	if ($capturearray eq 'bigexome' || $capturearray eq 'v3') {
 		$snperrorsfile = "$errorpath/snv.bigexome.vcf.gz";	
 		$indelerrorsfile = "$errorpath/indels.bigexome.vcf.gz";	
 	} elsif ($capturearray eq 'v2') {
@@ -573,10 +602,11 @@ sub optionUsage {
 	print "\t--out\toutput file\n";
 	print "\t--subjectreq\toutput file\n";
 	print "\t--misses\toutput file\n";
-	print "\t--GATKkeep\tGATK quality filters that should be kept, comma-delimited with no spaces\n";
+	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all')\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
-	print "\t--capture\tcapture array (optional: bigexome or v2)\n";
-	print "\t--model\toptional: compoundhet)\n";
+	print "\t--capture\tcapture array used in sequencing (optional: bigexome or v2)\n";
+	print "\t--model\toptional: (compoundhet)\n";
+	print "\t--mafcutoff\toptional (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	die;
 }
 
