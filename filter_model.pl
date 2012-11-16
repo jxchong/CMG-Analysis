@@ -12,7 +12,7 @@ use warnings;
 use Getopt::Long;
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $allowedmisses, $filters, $isNhit, $inheritmodel, $mafcutoff);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff);
 my $capturearray = 'NA';
 
 
@@ -20,7 +20,7 @@ GetOptions(
 	'in=s' => \$inputfile, 
 	'out=s' => \$outputfile,
 	'subjectreq=s' => \$subjectdeffile,
-	'misses=i' => \$allowedmisses,
+	'minhits=i' => \$minhits,
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
 	'capture:s' => \$capturearray,
@@ -34,8 +34,8 @@ if (!defined $inputfile) {
 	optionUsage("option --out not defined\n");
 } elsif (!defined $subjectdeffile) {
 	optionUsage("option --subjectreq not defined\n");
-} elsif (!defined $allowedmisses) {
-	optionUsage("option --misses not defined\n");
+} elsif (!defined $minhits) {
+	optionUsage("option --minhits not defined\n");
 } elsif (!defined $filters) {
 	optionUsage("option --GATKkeep not defined\n");
 } elsif (!defined $isNhit) {
@@ -129,7 +129,7 @@ while ( <FILE> ) {
 		if ($capturearray eq 'NA') {
 			$capturearray = 'bigexome';
 		}
-		print LOG "Allowing up to $allowedmisses subjects/families to miss having a variant in a given gene\n";
+		print LOG "Requiring hits in gene in at least $minhits subjects/families\n";
 		print LOG "Missing genotypes/no calls are counted as: $isNhit\n";
 		print LOG "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
 		print LOG "Excluding variants in systematic error file for $capturearray\n";
@@ -293,7 +293,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	# do before filtering of common variants and systematic errors for increased efficiency (data access, even by tabix, is slower)
 	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
 	# review all families for required number of hits in this gene
-	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $allowedmisses);													
+	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
 	
 	if ($enoughfamilieshavehits == 1) {
 		# filter out common variants and systematic errors
@@ -321,7 +321,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 		
 		# after filtering, recheck to make sure enough families still have enough hits in this gene, then output results
 		my $resultsFamiliesvsModel_ref_postfilter = checkFamiliesvsModel(\@filteredoutput, $inheritmodel);
-		my $enoughfamilieshavehits_postfilter = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $allowedmisses);													
+		my $enoughfamilieshavehits_postfilter = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $minhits);													
 		if ($enoughfamilieshavehits_postfilter == 1) {
 			$countgeneswhits++;
 			# print "... Printing hits for this gene ($gene)\n";
@@ -464,7 +464,7 @@ sub checkFamiliesvsModel {
 
 
 sub checkFamiliesforHits {
-	my($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $allowedmisses) = @_;
+	my($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits) = @_;
 	my %familieswHitsinGene = %{$resultsFamiliesvsModel_ref};
 	
 	my $countfamiliesmatch = 0;
@@ -487,7 +487,7 @@ sub checkFamiliesforHits {
 	}
 	
 	# if desired number of families have hits in gene
-	if ($countfamiliesmatch >= ($countuniquefamilies-$allowedmisses)) {
+	if ($countfamiliesmatch >= $minhits) {
 		return 1;
 	} else {
 		return 0;
@@ -600,8 +600,8 @@ sub optionUsage {
 	print "perl $0 \n";
 	print "\t--in\tinput file\n";
 	print "\t--out\toutput file\n";
-	print "\t--subjectreq\toutput file\n";
-	print "\t--misses\toutput file\n";
+	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
+	print "\t--minhits\tminimum number of families/individuals with hits\n";
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all')\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--capture\tcapture array used in sequencing (optional: bigexome or v2)\n";
