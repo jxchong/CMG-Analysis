@@ -426,7 +426,10 @@ sub isSystematicError {
 	my $iserror = 0;
 	foreach my $error (@errors) {
 		my ($errorchr, $errorpos, $errortype, $errorref, $erroralt, @errordata) = split("\t", $error);
-		if ($errorpos == $targetpos && $errorref eq $targetref && $erroralt eq $targetalt) {
+		my @errorfreqinfo = split("/", $errordata[2]);
+		$errorfreqinfo[0] =~ s/OBSERVED=//;
+		my $errorfreq = $errorfreqinfo[0]/$errorfreqinfo[1];
+		if ($errorpos == $targetpos && $errorref eq $targetref && $erroralt eq $targetalt && $errorfreq >= 0.2) {
 			$iserror = 1;
 		}
 	}
