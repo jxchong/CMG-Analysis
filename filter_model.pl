@@ -26,6 +26,7 @@ GetOptions(
 	'capture:s' => \$capturearray,
 	'model:s' => \$inheritmodel,
 	'mafcutoff:f' => \$mafcutoff,
+	'excludefunction=s' => \$excludeGVSfunction,
 );
 
 if (!defined $inputfile) {
@@ -44,7 +45,11 @@ if (!defined $inputfile) {
 	$mafcutoff = 0.01;
 } elsif (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
+} elsif (!defined $excludeGVSfunction) {
+	optionUsage("option --excludefunction not defined\n");
 }
+
+
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
@@ -52,16 +57,13 @@ if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 }
 
-my %GVStoexclude = (
-	'intron' => 1,
-	'intergenic' => 1,
-	'coding-synonymous' => 1,
-	# 'coding-synonymous-near-splice' => 1,
-	'utr-3' => 1,
-	'utr-5' => 1,
-	'near-gene-3' => 1,
-	'near-gene-5' => 1,
-);
+my %GVStoexclude;
+if ($excludeGVSfunction eq 'default') {
+	%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5);
+} else {
+	%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
+}
+
 
 
 my $logfile = "$outputfile.log";
@@ -607,8 +609,11 @@ sub optionUsage {
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all')\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
+	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
+		print "\t\tdefault=intron,intergenic,coding-synonymous,utr-3,utr-5,near-gene-3,near-gene-5\n";
 	print "\t--capture\tcapture array used in sequencing (optional: bigexome or v2)\n";
-	print "\t--model\toptional: (compoundhet)\n";
+		print "\t\twill default to bigexome\n";
+	print "\t--model\toptional: ('compoundhet' if compound het model desired, otherwise don't specify this option at all)\n";
 	print "\t--mafcutoff\toptional (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	die;
 }
