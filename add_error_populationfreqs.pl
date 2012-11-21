@@ -51,7 +51,7 @@ while ( <FILE> ) {
 	my $errorfreq = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
 	my $maxmaf = isCommonVar($chr,$pos,$vartype,$ref,$alt);
 
-	print OUT join("\t", @line)."\t$errorfreq\t$maxmaf\n";
+	print OUT join("\t", @line)."\t".sprintf("%.2f", $errorfreq)."\t".sprintf("%.2f", $maxmaf)."\n";
 }
 close FILE;
 
