@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# Description: Look for mutations matching a particular model
+# Description: Look for mutations matching a particular model given an SSAnnotation file produced by SeattleSeq.
 #
 #
 #
