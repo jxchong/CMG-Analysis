@@ -12,9 +12,8 @@ use warnings;
 use Getopt::Long;
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff);
-my $capturearray = 'NA';
-
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction);
+my $cmgfreqcutoff = 0.2;
 
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -23,7 +22,6 @@ GetOptions(
 	'minhits=i' => \$minhits,
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
-	'capture:s' => \$capturearray,
 	'model:s' => \$inheritmodel,
 	'mafcutoff:f' => \$mafcutoff,
 	'excludefunction=s' => \$excludeGVSfunction,
@@ -49,6 +47,15 @@ if (!defined $inputfile) {
 	optionUsage("option --excludefunction not defined\n");
 }
 
+
+# if inputfile has "wfreqs" in filename, assume add_error_populationfreqs.pl has already been run and values added to last two columns
+my $filehasfreqs = 0;
+if ($inputfile =~ /wfreqs/i) {
+	$filehasfreqs = 1;
+	print STDOUT "$inputfile contains frequency of variants in CMG and outside populations\n";
+} else {
+	print STDOUT "add_error_populationfreqs.pl was not run on $inputfile, so filtering based on frequency of variant in other samples will be much slower\n";
+}
 
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
@@ -106,37 +113,36 @@ my $headerline = <FILE>;
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
 my @subjectcolumns;
+my $isannotated = 0;
 for (my $i=0; $i<=$#header; $i++) {
 	if (defined $subjects{$header[$i]} || defined $subjects{"#$header[$i]"}) {
 		push(@subjectcolumns, $i);
 	}
+	if ($header[$i] =~ /Freqin/i) {
+		$isannotated = 1;
+	}
 }
+
+if ($isannotated == 1) {
+	print LOG "File contains frequencies in outside populations and frequency observed in other CMG subjects\n";
+} else {
+	print LOG "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
+	print LOG "Run: perl ~/bin/add_error_populationfreqs.pl --in $inputfile --out <outputfile> --capture <capture array for systematic error filtering>\n";
+	die;
+}
+
 print OUT "$headerline\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
-	if ($_ =~ '#') {
-		if ($_ =~ 'UnifiedGenotyper="analysis_type=UnifiedGenotyper') {
-			if ($_ =~ 'nimblegen_solution_bigexome_2011') {
-				$capturearray = 'bigexome';
-			} elsif ($_ =~ 'v2') {
-				$capturearray = 'v2';
-			}
-		} else {
-			next;	
-		}
-	}
 	$countinputvariants++;
 	
 	if ($printparams == 0) {
-		if ($capturearray eq 'NA') {
-			$capturearray = 'bigexome';
-		}
 		print LOG "Requiring hits in gene in at least $minhits subjects/families\n";
 		print LOG "Missing genotypes/no calls are counted as: $isNhit\n";
 		print LOG "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
-		print LOG "Excluding variants in systematic error file for $capturearray\n";
 		print LOG "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
 		print LOG "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
+		print LOG "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
 		print LOG "Compound het analysis? $inheritmodel\n";
 		$printparams = 1;
 	}
@@ -306,8 +312,19 @@ while (my ($gene, $results_ref) = each %genehits) {
 				my ($chr,$pos,$vartype,$ref,$alt) = @thishit[0..4];
 			my %matchingfamilies = %{${$hit}[1]};
 			my %matchingtrios = %{${$hit}[2]};
-			my $iserror = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-			my $iscommon = isCommonVar($chr,$pos,$vartype,$ref,$alt,$mafcutoff);
+			my $iserror = 0;
+			my $iscommon = 0;
+			if ($filehasfreqs == 1) {
+				my $lastcol = $#thishit;
+				my $freqinCMG = $thishit[($lastcol-1)]/100;							# storing allele freq as percentage
+				my $freqinOutside = $thishit[$lastcol]/100;							# storing allele freq as percentage
+				if ($freqinCMG >= $cmgfreqcutoff) {
+					$iserror = 1;
+				}
+				if ($freqinOutside > $mafcutoff) {
+					$iscommon = 1;
+				}				
+			} 
 			if ($iserror==1) {
 				$counterrorvariants++;
 			}
@@ -348,95 +365,6 @@ print LOG "N=$counterrorvariants are systematic errors and N=$countcommonvariant
 close LOG;
 
 
-sub isCommonVar {
-	# remove common variation (ESP and 1kG)
-	my ($targetchr, $targetpos, $targettype, $targetref, $targetalt, $mafcutoff) = @_;
-	my $iscommon = 0;
-	
-	my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
-	my $thousandgenomesfile = "$commonvarpath/phase1_release_v3.20101123.snps_indels_svs.sites.vcf.gz";
-	my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";
-	my $espindelsfile = "$commonvarpath/esp6500_indels.frq";
-		
-	if ($targettype =~ m/snp/i) {
-		my @varatsamepos = `tabix $espSNPsfile $targetchr:$targetpos-$targetpos`;
-		foreach my $variant (@varatsamepos) {
-			my ($varchr, $varpos, $rsid, $varref, $varalt, @vardata) = split("\t", $variant);
-			$vardata[2] =~ /MAF=((\.|\d|,)+);/;
-			my @popMAFs = split(",", $1);
-			if ($varpos == $targetpos && $varref eq $targetref && $varalt eq $targetalt) {
-				foreach my $varmaf (@popMAFs) {
-					my $actualmaf = $varmaf/100;						# in ESP, allele freqs reported as percentages
-					if ($actualmaf > $mafcutoff) {
-						$iscommon = 1;
-					}
-				}
-			}
-		}
-		if ($iscommon == 0) {
-			# since it's a bit slower, only check 1000 Genomes if this variant is not in ESP
-			my @varatsamepos = `tabix $thousandgenomesfile $targetchr:$targetpos-$targetpos`;
-			foreach my $variant (@varatsamepos) {
-				my ($varchr, $varpos, $rsid, $varref, $varalt, @vardata) = split("\t", $variant);
-				my @populations = qw(ASN AMR AFR EUR);
-				my @popMAFs;
-				foreach my $population (@populations) {
-					my $maffield = $population."_AF";
-					$vardata[2] =~ m/;$maffield=((\.|\d)+)/;
-					if (defined $1) {
-						push(@popMAFs, $1);
-					}
-				}
-				if ($varpos == $targetpos && $varref eq $targetref && $varalt eq $targetalt) {
-					foreach my $varmaf (@popMAFs) {
-						if ($varmaf > $mafcutoff) {
-							$iscommon = 1;
-						}
-					}
-				}
-			}
-		}
-	}
-	
-	return $iscommon;
-}
-
-sub isSystematicError {
-	# remove systematic errors
-	my ($targetchr, $targetpos, $targettype, $targetref, $targetalt, $capturearray) = @_;
-		
-	my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2012_oct';
-	my ($snperrorsfile, $indelerrorsfile);
-	if ($capturearray eq 'bigexome' || $capturearray eq 'v3') {
-		$snperrorsfile = "$errorpath/snv.bigexome.vcf.gz";	
-		$indelerrorsfile = "$errorpath/indels.bigexome.vcf.gz";	
-	} elsif ($capturearray eq 'v2') {
-		$snperrorsfile = "$errorpath/snv.v2.vcf.gz";	
-		$indelerrorsfile = "$errorpath/indels.v2.vcf.gz";
-	} else {
-		$snperrorsfile = "$errorpath/snv.$capturearray.vcf.gz";	
-		$indelerrorsfile = "$errorpath/indels.$capturearray.vcf.gz";
-	}
-
-	my @errors;
-	if ($targettype =~ m/snp/i) {
-		@errors = `tabix $snperrorsfile $targetchr:$targetpos-$targetpos`;
-	} elsif ($targettype =~ m/indel/i) {
-		@errors = `tabix $indelerrorsfile $targetchr:$targetpos-$targetpos`;
-	}
-	
-	my $iserror = 0;
-	foreach my $error (@errors) {
-		my ($errorchr, $errorpos, $errortype, $errorref, $erroralt, @errordata) = split("\t", $error);
-		my @errorfreqinfo = split("/", $errordata[2]);
-		$errorfreqinfo[0] =~ s/OBSERVED=//;
-		my $errorfreq = $errorfreqinfo[0]/$errorfreqinfo[1];
-		if ($errorpos == $targetpos && $errorref eq $targetref && $erroralt eq $targetalt && $errorfreq >= 0.2) {
-			$iserror = 1;
-		}
-	}
-	return $iserror;
-}
 
 sub checkFamiliesvsModel {
 	# account for possible compound het model, then recount matching families
@@ -611,8 +539,6 @@ sub optionUsage {
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
 		print "\t\tdefault=intron,intergenic,coding-synonymous,utr-3,utr-5,near-gene-3,near-gene-5\n";
-	print "\t--capture\tcapture array used in sequencing (optional: bigexome or v2)\n";
-		print "\t\twill default to bigexome\n";
 	print "\t--model\toptional: ('compoundhet' if compound het model desired, otherwise don't specify this option at all)\n";
 	print "\t--mafcutoff\toptional (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	die;

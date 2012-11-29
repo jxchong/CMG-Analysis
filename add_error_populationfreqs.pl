@@ -42,7 +42,7 @@ open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 my $headerline = <FILE>;
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
-print OUT join("\t", @header)."\tFreqinCMG\tFreqinOutsidePop\n";
+print OUT join("\t", @header)."\tPrctFreqinCMG\tPrctFreqinOutsidePop\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	my @line = split ("\t", $_);
@@ -51,7 +51,7 @@ while ( <FILE> ) {
 	my $errorfreq = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
 	my $maxmaf = isCommonVar($chr,$pos,$vartype,$ref,$alt);
 
-	print OUT join("\t", @line)."\t".sprintf("%.2f", $errorfreq)."\t".sprintf("%.2f", $maxmaf)."\n";
+	print OUT join("\t", @line)."\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxmaf*100)."\n";
 }
 close FILE;
 
