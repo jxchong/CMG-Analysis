@@ -113,7 +113,7 @@ my $headerline = <FILE>;
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
 my @subjectcolumns;
-my ($polyphencol, $phaseconscol, $gerpcol, $gatkfiltercol);
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol);
 my $isannotated = 0;
 for (my $i=0; $i<=$#header; $i++) {
 	my $columnname = $header[$i];
