@@ -113,13 +113,26 @@ my $headerline = <FILE>;
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
 my @subjectcolumns;
+my ($polyphencol, $phaseconscol, $gerpcol, $gatkfiltercol);
 my $isannotated = 0;
 for (my $i=0; $i<=$#header; $i++) {
-	if (defined $subjects{$header[$i]} || defined $subjects{"#$header[$i]"}) {
+	my $columnname = $header[$i];
+	if ($columnname =~ /Gtype/i) {
+		$columnname =~ s/Gtype//; 
+	}
+	if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
 		push(@subjectcolumns, $i);
 	}
-	if ($header[$i] =~ /Freqin/i) {
+	if ($columnname =~ /Freqin/i) {
 		$isannotated = 1;
+	} elsif ($columnname =~ /polyPhen/i) {
+		$polyphencol = $i;
+	} elsif ($columnname =~ /GERP/i) {
+		$gerpcol = $i;
+	} elsif ($columnname =~ /PhastCons/i) {
+		$phastconscol = $i;
+	} elsif ($columnname =~ /filterFlagGATK/i) {
+		$gatkfiltercol = $i;
 	}
 }
 
@@ -152,9 +165,9 @@ while ( <FILE> ) {
 	my ($chr, $pos, $vartype, $ref, $alt);
 	my @subjectgenotypes;
 	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons);
-	my $indbsnp = 'NA';
-	my $inUWexomes = 'NA';
-	my $UWexomescovered = 'NA';
+	# my $indbsnp = 'NA';
+	# my $inUWexomes = 'NA';
+	# my $UWexomescovered = 'NA';
 	my $filterset;
 	
 	if ($inputfile =~ m/SeattleSeqAnnotation134/) {
@@ -168,10 +181,10 @@ while ( <FILE> ) {
 			$gene = $line[20];
 			$filterset = 'NA';
 			$functionimpact = $line[8];
-			$indbsnp = $line[0];
-			$gerp = $line[17];
-			$phastcons = $line[16];
-			$polyphen = $line[14];		
+			# $indbsnp = $line[0];
+			$gerp = $line[$gerpcol];
+			$phastcons = $line[$phastconscol];
+			$polyphen = $line[$polyphencol];		
 			$vartype = 'SNP';
 			($ref, $alt) = selectRefAlt($line[3], $samplealleles[0], $samplealleles[1]);
 			@subjectgenotypes = split(",", $line[4]);
@@ -182,16 +195,16 @@ while ( <FILE> ) {
 		}
 	} elsif ($inputfile =~ m/SSAnnotation/) {
 		($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
-		$filterset = $line[5];
+		$filterset = $line[$gatkfiltercol];
 		$gene = $line[7];
 		@subjectgenotypes = @line[@subjectcolumns];
-		$indbsnp = $line[8];
+		# $indbsnp = $line[8];
 		$functionimpact = $line[10];
-		$phastcons = $line[13];
-		$gerp = $line[14];
-		$polyphen = $line[15];
-		$inUWexomes = $line[16];
-		$UWexomescovered = $line[17];
+		$phastcons = $line[$phastconscol];
+		$gerp = $line[$gerpcol];
+		$polyphen = $line[$polyphencol];
+		# $inUWexomes = $line[16];
+		# $UWexomescovered = $line[17];
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
@@ -439,21 +452,21 @@ sub checkGATKfilters {
 	return $keep;
 }
 
-sub isNovel {
-	my ($indbsnp, $inUWexomes, $UWexomescovered) = @_;
-	my $score = 0;
-	# if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
-	# 	$score += 1;
-	# }
-	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
-		$score += 1;
-	}
-	if ($score > 0) {
-		return 1;
-	} else {
-		return 0;
-	}
-}
+# sub isNovel {
+# 	my ($indbsnp, $inUWexomes, $UWexomescovered) = @_;
+# 	my $score = 0;
+# 	# if ($indbsnp eq 'none' || $indbsnp eq 'NA' || $indbsnp eq '.' || $indbsnp eq '0') {
+# 	# 	$score += 1;
+# 	# }
+# 	if ($inUWexomes == 0 || $UWexomescovered == 0 || $inUWexomes eq 'NA') {
+# 		$score += 1;
+# 	}
+# 	if ($score > 0) {
+# 		return 1;
+# 	} else {
+# 		return 0;
+# 	}
+# }
 
 sub shouldfunctionFilter {
 	my ($GVStoexclude_ref, $functionimpact) = @_;

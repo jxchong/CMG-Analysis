@@ -141,7 +141,10 @@ sub isSystematicError {
 		my ($errorchr, $errorpos, $errortype, $errorref, $erroralt, @errordata) = split("\t", $error);
 		my @errorfreqinfo = split("/", $errordata[2]);
 		$errorfreqinfo[0] =~ s/OBSERVED=//;
-		my $errorfreq = $errorfreqinfo[0]/$errorfreqinfo[1];
+		my $errorfreq = 0;
+		if ($errorfreqinfo[1] != 0) {
+			$errorfreq = $errorfreqinfo[0]/$errorfreqinfo[1];
+		}
 		if ($errorpos == $targetpos && $errorref eq $targetref && $erroralt eq $targetalt) {
 			if ($errorfreq >= $maxerrorfreq) {
 				$maxerrorfreq = $errorfreq;
