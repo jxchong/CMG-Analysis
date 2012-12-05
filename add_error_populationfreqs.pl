@@ -68,6 +68,7 @@ sub isCommonVar {
 	my $thousandgenomesfile = "$commonvarpath/phase1_release_v3.20101123.snps_indels_svs.sites.vcf.gz";
 	my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";
 	my $espindelsfile = "$commonvarpath/esp6500_indels.frq";
+	my $africanSNPsfile = "$commonvarpath/Gibbons_1.frq.gz";
 		
 	my $maxmaf = 0;
 	if ($targettype =~ m/snp/i) {
@@ -85,6 +86,18 @@ sub isCommonVar {
 					}
 				}
 			}
+		}
+		
+		@varatsamepos = `tabix $africanSNPsfile $targetchr:$targetpos-$targetpos`;
+		foreach my $variant (@varatsamepos) {
+			my ($varchr, $varpos, $nalleles, $nchrobs, $reffreq, $altfreq) = split("\t", $variant);
+			# if ($varpos == $targetpos && $varref eq $targetref && $varalt eq $targetalt) {
+			# 	foreach my $varmaf (@popMAFs) {
+					if ($altfreq > $maxmaf) {
+						$maxmaf = $altfreq;
+					}
+				# }
+			# }
 		}
 	}
 	
