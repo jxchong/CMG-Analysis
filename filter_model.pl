@@ -44,7 +44,7 @@ if (!defined $inputfile) {
 	optionUsage("option --N not defined\n");
 } 
 if (!defined $mindp) {
-	$mindp = 20;
+	$mindp = 10;
 }
 if (!defined $minqual) {
 	$minqual = 30;
@@ -63,15 +63,6 @@ if (!defined $excludeGVSfunction) {
 }
 
 
-# if inputfile has "wfreqs" in filename, assume add_error_populationfreqs.pl has already been run and values added to last two columns
-my $filehasfreqs = 0;
-if ($inputfile =~ /wfreqs/i) {
-	$filehasfreqs = 1;
-	print STDOUT "$inputfile contains frequency of variants in CMG and outside populations\n";
-} else {
-	print STDOUT "add_error_populationfreqs.pl was not run on $inputfile, so filtering based on frequency of variant in other samples will be much slower\n";
-}
-
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
@@ -82,6 +73,8 @@ if ($filters eq 'all' || $filters eq 'any') {
 my %GVStoexclude;
 if ($excludeGVSfunction eq 'default') {
 	%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5);
+} elsif ($excludeGVSfunction eq 'none')  {
+	%GVStoexclude = map {$_ => 1} qw(NA);
 } else {
 	%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
 }
@@ -134,8 +127,7 @@ my @header = split("\t", $headerline);
 my @genotypecolumns;
 my @qualcolumns;
 my @dpcolumns;
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol);
-my $isannotated = 0;
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $filehasfreqs);
 for (my $i=0; $i<=$#header; $i++) {
 	my $columnname = $header[$i];
 	if ($columnname =~ /Qual/i) {
@@ -149,7 +141,12 @@ for (my $i=0; $i<=$#header; $i++) {
 		push(@genotypecolumns, $i);
 	}
 	if ($columnname =~ /Freqin/i) {
-		$isannotated = 1;
+		$filehasfreqs = 1;
+		if ($columnname =~ /PrctFreqinCMG/i) {
+			$freqinCMGcol = $i;
+		} elsif ($columnname =~ /PrctFreqinOutsidePop/i) {
+			$freqinOutsidecol = $i;
+		}		
 	} elsif ($columnname =~ /polyPhen/i) {
 		$polyphencol = $i;
 	} elsif ($columnname =~ /GERP/i) {
@@ -163,7 +160,7 @@ for (my $i=0; $i<=$#header; $i++) {
 	}
 }
 
-if ($isannotated == 1) {
+if ($filehasfreqs == 1) {
 	print LOG "File contains frequencies in outside populations and frequency observed in other CMG subjects\n";
 } else {
 	print LOG "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
@@ -184,7 +181,7 @@ while ( <FILE> ) {
 		print LOG "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
 		print LOG "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
 		print LOG "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
-		print LOG "Compound het analysis? $inheritmodel\n";
+		print LOG "Special analysis? $inheritmodel\n";
 		$printparams = 1;
 	}
 	
@@ -272,10 +269,10 @@ while ( <FILE> ) {
 		$workingchr = $chr;
 	}
 	
-	# if (isNovel($indbsnp, $inUWexomes, $UWexomescovered) && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || checkGATKfilters(\%allowedGATKfilters, $filterset))) {
 		my %checkfamilies;
-		for (my $i=0; $i<=$#subjectgenotypes; $i++) {
+		my $countcarriers = 0;
+		for (my $i=0; $i<=$#subjectgenotypes; $i++) {										# determine genotype for each subject
 			my ($qual, $dp) = ('NA', 'NA');
 			if (@dpcolumns) {
 				$dp = $subjectdps[$i];
@@ -296,13 +293,18 @@ while ( <FILE> ) {
 				
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $dp, $qual, $mindp, $minqual);
 				$checkfamilies{$familyid}{$relation} = $ismatch;
+				
+				# if model is unique de novo
+				if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $dp, $qual, $mindp, $minqual) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $dp, $qual, $mindp, $minqual)) {
+					$countcarriers++;
+				}
 			} 
 		}
-
+		
 		my $countfamiliesmatch = 0;
 		my %matchingfamilies;
 		my %matchingfamilyunits;
-		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {
+		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
 			my %thisfamily = %{$thisfamily_ref};
 
 			my $thisfamilymatch = 0;
@@ -337,17 +339,25 @@ while ( <FILE> ) {
 				if ($thisfamilymatch == $familysize) {
 					$countfamiliesmatch += 1;
 					$matchingfamilies{$familyid} = 1;
-					# print "$gene, chr$chr:$pos = hit for family $familyid\n";
 				}
 			}
 		}
 
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
-			push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
+			if ($inheritmodel eq 'unique') {
+				if ($countcarriers == 1) {
+					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single family has the mutation
+				} else {
+					# print STDERR "$chr:$pos isn't unique\n";
+				}
+			} else {
+				push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
+			}
 		}
 	}
-	# if ($chr == 3) {
+	# if ($chr == 12) {
+	# 	print STDERR "stopping at chromosome $chr\n";
 	# 	last;
 	# }
 }
@@ -378,7 +388,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	# do before filtering of common variants and systematic errors for increased efficiency (data access, even by tabix, is slower)
 	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
 	# review all families for required number of hits in this gene
-	my ($enoughfamilieshavehits, $familyidswHits) = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
+	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
 	
 	if ($enoughfamilieshavehits == 1) {
 		# filter out common variants and systematic errors
@@ -392,9 +402,8 @@ while (my ($gene, $results_ref) = each %genehits) {
 			my $iserror = 0;
 			my $iscommon = 0;
 			if ($filehasfreqs == 1) {
-				my $lastcol = $#thishit;
-				my $freqinCMG = $thishit[($lastcol-1)]/100;							# storing allele freq as percentage
-				my $freqinOutside = $thishit[$lastcol]/100;							# storing allele freq as percentage
+				my $freqinCMG = $thishit[$freqinCMGcol]/100;							# storing allele freq as percentage
+				my $freqinOutside = $thishit[$freqinOutsidecol]/100;							# storing allele freq as percentage
 				if ($freqinCMG >= $cmgfreqcutoff) {
 					$iserror = 1;
 				}
@@ -417,14 +426,18 @@ while (my ($gene, $results_ref) = each %genehits) {
 		
 		# after filtering, recheck to make sure enough families still have enough hits in this gene, then output results
 		my $resultsFamiliesvsModel_ref_postfilter = checkFamiliesvsModel(\@filteredoutput, $inheritmodel);
-		my ($enoughfamilieshavehits_postfilter, $familyidswHits) = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $minhits);													
+		my $enoughfamilieshavehits_postfilter = checkFamiliesforHits($resultsFamiliesvsModel_ref_postfilter, $inheritmodel, $countuniquefamilies, $minhits);													
 		if ($enoughfamilieshavehits_postfilter == 1) {
 			$countgeneswhits++;
 			# print "... Printing hits for this gene ($gene)\n";
 		  	foreach my $hit (@filteredoutput) {
 		  		my $hitvarinfo = ${$hit}[0];
+				my %matchingfamilies = %{${$hit}[1]};
+				my %matchingfamilyunits = %{${$hit}[2]};
+				
+				my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 		  		$countoutputvariants++;
-		  		print OUT "$hitvarinfo\t$familyidswHits\n";
+		  		print OUT "$hitvarinfo\t".join(";", @familyids)."\n";
 		  	}
 		} else {
 			$countgenesrejectedhits++;
@@ -450,15 +463,28 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 	# account for possible compound het model, then recount matching families
 	my ($inputhitdata_ref, $inheritmodel) = @_;
 	my %familieswHitsinGene;
+	# my @hitswithfamilyinfo;
 	foreach my $hit (@{$inputhitdata_ref}) {
 		my $hitvarinfo = ${$hit}[0];
 			my @thishit = split("\t", $hitvarinfo);
 		my %matchingfamilies = %{${$hit}[1]};
 		my %matchingfamilyunits = %{${$hit}[2]};
 
+		# my $countfamiliessamehit = 0;
+		# my @familieswthishit;
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
-			$familieswHitsinGene{$familyid}++;																										# DEBUG
+			# push(@familieswthishit, $familyid);
+			# $countfamiliessamehit++;
+			$familieswHitsinGene{$familyid}++;				
 		}
+		
+		# if ($inheritmodel eq 'unique') {
+		# 	if ($countfamiliessamehit < 1) {
+		# 		$familieswHitsinGene{$familyid}++;																										# DEBUG
+		# 	}
+		# } else {
+		# 	$familieswHitsinGene{$familyid}++;																										# DEBUG
+		# }
 
 		if ($inheritmodel eq 'compoundhet') {
 			while (my($familyid, $matchsubj) = each %matchingfamilyunits) {
@@ -466,22 +492,26 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 					$familieswHitsinGene{$familyid}{'father'} = 0;
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
 				}
-				$familieswHitsinGene{$familyid}{$matchsubj}++;																						# hit comes from xxx parent
+				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
+				# push(@trackfamilyidswHits, $familyid);													# familyid might show up as having a hit at a particular variant even though they don't have two hits in that gene
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
 					if ($member =~ m/child/i) {
-						$familieswHitsinGene{$familyid}{$member}++;																					# add one to hits in children
+						$familieswHitsinGene{$familyid}{$member}++;										# add one to hits in children
 					}
 				}				
 			}
 		}
+		
+		# my $newinfo = "$hitvarinfo\t".join(";", @trackfamilyidswHits);
+		# push(@hitswithfamilyinfo, $newinfo);
 	}
-	return \%familieswHitsinGene;
+	return (\%familieswHitsinGene);
 }
 
 
-sub checkFamiliesforHits {																													# make sure required number of hits in each family/individual
+sub checkFamiliesforHits {																				# make sure required number of hits in each family/individual
 	my($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits) = @_;
 	my %familieswHitsinGene = %{$resultsFamiliesvsModel_ref};
 	
@@ -506,21 +536,18 @@ sub checkFamiliesforHits {																													# make sure required numb
 			} elsif (!ref($familyhits)) {																									
 				if ($familyhits >= 2) {
 					$countfamiliesmatch++;
-					push(@trackfamilyidswHits, $familyid);
 				}
 			}
 		} else {
 			if ($familyhits >= 1) {
 				$countfamiliesmatch++;
-				push(@trackfamilyidswHits, $familyid);
 			}
 		}
 	}
 	
 	# if desired number of families have hits in gene
 	if ($countfamiliesmatch >= $minhits) {
-		my $familyidswHits = join(";", @trackfamilyidswHits);
-		return (1, $familyidswHits);
+		return 1;
 	} else {
 		return 0;
 	}
@@ -629,7 +656,7 @@ sub optionUsage {
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
 		print "\t\tdefault=intron,intergenic,coding-synonymous,utr-3,utr-5,near-gene-3,near-gene-5\n";
-	print "\t--model\toptional: ('compoundhet' if compound het model desired, otherwise don't specify this option at all)\n";
+	print "\t--model\toptional: ('compoundhet' if compound het model desired, 'unique' if filtering for de novo unique; otherwise don't specify this option at all)\n";
 	print "\t--mafcutoff\toptional: (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	print "\t--errorcutoff\toptional: (cutoff frequency for filtering out systematic errors based on frequency in all CMG exomes to date)\n";
 	die;
