@@ -17,7 +17,7 @@ my %genehits;
 my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
 
 my ($count_dpexclude, $count_qualexclude, $count_notunique, $count_examined_variants, $count_variants_excluded_function, $count_variants_excluded_gatk) = ((0) x 6);
-my $countkeptvariants = 0;
+my $countvariantsmatchmodel = 0;
 my $counterrorvariants = 0;
 my $countcommonvariants = 0;
 my $countexcludedvariants = 0;
@@ -305,13 +305,17 @@ while ( <FILE> ) {
 		$iscommon = 1;
 		$countcommonvariants++;
 	}				
-	if ($iserror==1 || $iscommon==1) {
-		$countexcludedvariants++;
+	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact) == 1) {
+		$count_variants_excluded_function++;
 	}
-		
-	if ($iserror==0 && $iscommon==0) {
+	if (passGATKfilters(\%allowedGATKfilters, $filterset) == 0) {
+		$count_variants_excluded_gatk++;
+	}
+
+	if ($iserror==0 && $iscommon==0 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || passGATKfilters(\%allowedGATKfilters, $filterset))) {
 		$count_examined_variants++;
 		my %checkfamilies;
+		my %qualityflags;
 		my $countcarriers = 0;
 		my $ishet_excluded = 0;
 		for (my $i=0; $i<=$#subjectgenotypes; $i++) {										# determine genotype for each subject
@@ -330,47 +334,54 @@ while ( <FILE> ) {
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
 						$checkfamilies{$familyid}{$member} = -1;
+						$qualityflags{$familyid}{$member} = -1;
 					}
 				}
 				
+				my $thissubjflag = "";
 				if ($dp ne 'NA' || $qual ne 'NA') {															# if depth or qual information available
-					if (checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit)) {
-						if ($dp < $mindp) {
-							$count_dpexclude++;
-						}
-						if ($qual < $minqual) {
-							$count_qualexclude++;
-						}
+					if ($dp < $mindp) {
+						$thissubjflag .= "DP";
 					}
-					if ($dp < $mindp || $qual < $minqual) {													# if genotype doesn't meet minimum DP/Qual requirements, set genotype to missing
-						$genotype = 'N';
+					if ($qual < $minqual) {
+						$thissubjflag .= "GQ";
 					}
 				}
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
+				$qualityflags{$familyid}{$relation} = $thissubjflag;
 
 				# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
-				if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
-					$countcarriers++;
+				if ($dp >= $mindp || $qual >= $minqual) {													# if genotype doesn't meet minimum DP/Qual requirements, set genotype to missing
+					if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
+						$countcarriers++;
+					}
 				}
 			} 
 		}
 		
+		my @countfamiliesrejectqual = (0,0);
+		my $countfamiliesmatchmodel = 0;
 		my $countfamiliesmatch = 0;
 		my %matchingfamilies;
 		my %matchingfamilyunits;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
 			my %thisfamily = %{$thisfamily_ref};
-
 			my $thisfamilymatch = 0;
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
+			my @rejectquality = (0,0);
 
 			if ($inheritmodel eq 'compoundhet' && $familysize >= 3) {							
 				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1) {
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
-						if ($member =~ m/child/i && $thisfamily{$member} == 1) {
+						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {							# FIX!!!! (allow for multiple kids)
 							$thisfamilymatch += 1;
+							if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
+								$rejectquality[0] = 1;
+							} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
+								$rejectquality[1] = 1;
+							}
 						}
 					}
 					my $matchsubj;
@@ -381,45 +392,61 @@ while ( <FILE> ) {
 						$matchsubj = 'mother';
 					}
 					if ($thisfamilymatch == ($familysize-2)) {													# if all affected children have at least one hit
-						$matchingfamilyunits{$familyid} = $matchsubj;
+						$countfamiliesmatchmodel++;
+						if (($rejectquality[0]+$rejectquality[1]) == 0) {
+							$matchingfamilyunits{$familyid} = $matchsubj;
+						} else {
+							$countfamiliesrejectqual[0] += $rejectquality[0];
+							$countfamiliesrejectqual[1] += $rejectquality[1];
+						}
 					}
 				} 
 			} else {
 				while (my ($relation, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
 						$thisfamilymatch += $thismatch;
+						if ($qualityflags{$familyid}{$relation} =~ m/DP/i) {
+							$rejectquality[0] = 1;
+						} elsif ($qualityflags{$familyid}{$relation} =~ m/GQ/i) {
+							$rejectquality[1] = 1;
+						}
 					}
 				}
 
 				if ($thisfamilymatch == $familysize) {
-					$countfamiliesmatch += 1;
-					$matchingfamilies{$familyid} = 1;
+					$countfamiliesmatchmodel++;
+					if (($rejectquality[0]+$rejectquality[1]) == 0) {
+						$countfamiliesmatch += 1;
+						$matchingfamilies{$familyid} = 1;
+					} else {
+						$countfamiliesrejectqual[0] += $rejectquality[0];
+						$countfamiliesrejectqual[1] += $rejectquality[1];
+					}
 				}
 			}
 		}
 
+		if ($countfamiliesmatchmodel > 0) {
+			$countvariantsmatchmodel++;
+		}
+		$count_dpexclude += $countfamiliesrejectqual[0];
+		$count_qualexclude += $countfamiliesrejectqual[1];
+
+
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
-			if (shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || passGATKfilters(\%allowedGATKfilters, $filterset))) {
-				if ($inheritmodel eq 'unique') {
-					if ($countcarriers == 1) {
-						push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single individual in a single family has the mutation
-					} else {
-						$count_notunique++;
-					}
+			if ($inheritmodel eq 'unique') {
+				if ($countcarriers == 1) {
+					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single individual in a single family has the mutation
 				} else {
-					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
+					$count_notunique++;
 				}
 			} else {
-				if (shouldfunctionFilter(\%GVStoexclude, $functionimpact)==1) {
-					$count_variants_excluded_function++;
-				}
-				if (passGATKfilters(\%allowedGATKfilters, $filterset) == 0) {
-					$count_variants_excluded_gatk++;
-				}
-				
+				push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
 			}
 		}
+	} else {
+		$countexcludedvariants++;
 	}
 	
 	# if ($chr == 12) {
@@ -471,13 +498,16 @@ while (my ($gene, $results_ref) = each %genehits) {
 print LOG "\nResults summary:\n";
 print LOG "In $countgeneswhits gene(s), matched $countoutputvariants variants\n";
 print LOG "Total $countinputvariants variants in input\n";
-print LOG "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants variants: N=$counterrorvariants are systematic errors and N=$countcommonvariants are common variants\n";
-
-print LOG "Filtered out candidate hits:\n";
-print LOG "\tN=$count_variants_excluded_function based on functional annotation\n";
+print LOG "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
+print LOG "\tN=$counterrorvariants are systematic errors\n";
+print LOG "\tN=$countcommonvariants are common variants\n";
 print LOG "\tN=$count_variants_excluded_gatk based on GATK filter\n";
+print LOG "\tN=$count_variants_excluded_function based on functional annotation\n";
+
+
+print LOG "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
+print LOG "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on QD\n";
 print LOG "\tN=$count_notunique excluded because they were not unique within this dataset\n";
-print LOG "In at least one subject who could have had a hit: N=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on QD\n";
 close LOG;
 
 
