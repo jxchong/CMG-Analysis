@@ -12,7 +12,9 @@ use warnings;
 use Getopt::Long;
 
 
+
 my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual);
+my $debugmode;
 my %genehits;
 my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
 
@@ -35,6 +37,7 @@ GetOptions(
 	'errorcutoff:f' => \$cmgfreqcutoff,
 	'dp:f' => \$mindp,
 	'qual:f' => \$minqual,
+	'debug:i' => \$debugmode,
 );
 
 if (!defined $inputfile) {
@@ -67,6 +70,11 @@ if (!defined $inheritmodel) {
 } 
 if (!defined $excludeGVSfunction) {
 	optionUsage("option --excludefunction not defined\n");
+}
+if (!defined $debugmode) {
+	$debugmode = 0;
+} else {
+	print STDOUT "Debug mode is on\n";
 }
 
 
@@ -123,7 +131,7 @@ print LOG "\n";
 
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
-if ($inputfile =~ m/.vcf/ && $inputfile =~ m/.gz/) {
+if ($inputfile =~ /\.gz$/) {
 	open (FILE, "zcat $inputfile |") or die "Cannot read $inputfile file: $!.\n";
 } else {
 	open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
@@ -132,7 +140,8 @@ print STDOUT "Reading in genotypes from $inputfile\n";
 
 
 ###################### BEGIN parse the header #############################
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $filehasfreqs, @genotypecolumns, @qualcolumns, @dpcolumns);
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns);
+my $filehasfreqs = 0;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
 
@@ -186,6 +195,7 @@ for (my $i=0; $i<=$#header; $i++) {
 if ($filehasfreqs == 1) {
 	print LOG "File contains frequencies in outside populations and frequency observed in other CMG subjects\n";
 } else {
+	print STDERR "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
 	print LOG "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
 	print LOG "Run: perl ~/bin/add_error_populationfreqs.pl --in $inputfile --out <outputfile> --capture <capture array for systematic error filtering>\n";
 	die;
@@ -294,25 +304,32 @@ while ( <FILE> ) {
 		$workingchr = $chr;
 	}
 	
+	if ($debugmode == 1) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
+	
 	my ($iserror, $iscommon) = (0,0);
 	my $freqinCMG = $line[$freqinCMGcol]/100;							# storing allele freq as percentage
 	my $freqinOutside = $line[$freqinOutsidecol]/100;							# storing allele freq as percentage
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
+		if ($debugmode == 1) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
 	}
 	if ($freqinOutside > $mafcutoff) {
 		$iscommon = 1;
 		$countcommonvariants++;
+		if ($debugmode == 1) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
 	}				
 	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact) == 1) {
 		$count_variants_excluded_function++;
+		if ($debugmode == 1) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
 	}
 	if (passGATKfilters(\%allowedGATKfilters, $filterset) == 0) {
 		$count_variants_excluded_gatk++;
+		if ($debugmode == 1) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
 	}
 
 	if ($iserror==0 && $iscommon==0 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || passGATKfilters(\%allowedGATKfilters, $filterset))) {
+		if ($debugmode == 1) { print STDOUT "variant passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
 		my %qualityflags;
@@ -350,6 +367,7 @@ while ( <FILE> ) {
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
+				if ($debugmode == 1) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP $thissubjflag\n"; }			## DEBUG
 
 				# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
 				if ($dp >= $mindp || $qual >= $minqual) {													# if genotype doesn't meet minimum DP/Qual requirements, set genotype to missing
@@ -398,6 +416,7 @@ while ( <FILE> ) {
 						} else {
 							$countfamiliesrejectqual[0] += $rejectquality[0];
 							$countfamiliesrejectqual[1] += $rejectquality[1];
+							if ($debugmode == 1) { print STDOUT "rejecting b/c GQ/DP\n"; }			## DEBUG
 						}
 					}
 				} 
@@ -421,6 +440,7 @@ while ( <FILE> ) {
 					} else {
 						$countfamiliesrejectqual[0] += $rejectquality[0];
 						$countfamiliesrejectqual[1] += $rejectquality[1];
+						if ($debugmode == 1) { print STDOUT "rejecting b/c of GQ/DP\n"; }			## DEBUG
 					}
 				}
 			}
@@ -432,7 +452,6 @@ while ( <FILE> ) {
 		$count_dpexclude += $countfamiliesrejectqual[0];
 		$count_qualexclude += $countfamiliesrejectqual[1];
 
-
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
 			if ($inheritmodel eq 'unique') {
@@ -440,6 +459,7 @@ while ( <FILE> ) {
 					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single individual in a single family has the mutation
 				} else {
 					$count_notunique++;
+					if ($debugmode == 1) { print STDOUT "rejecting b/c of not unique\n"; }			## DEBUG
 				}
 			} else {
 				push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
@@ -449,8 +469,10 @@ while ( <FILE> ) {
 		$countexcludedvariants++;
 	}
 	
+	if ($debugmode == 1) { print STDOUT "\n"; }			## DEBUG
+	
 	# if ($chr == 12) {
-	# 	print STDERR "stopping at chromosome $chr\n";
+	# 	print STDOUT "stopping at chromosome $chr\n";
 	# 	last;
 	# }
 }
@@ -506,7 +528,7 @@ print LOG "\tN=$count_variants_excluded_function based on functional annotation\
 
 
 print LOG "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
-print LOG "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on QD\n";
+print LOG "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
 print LOG "\tN=$count_notunique excluded because they were not unique within this dataset\n";
 close LOG;
 
