@@ -162,7 +162,7 @@ for (my $i=0; $i<=$#header; $i++) {
 	my $columnname = $header[$i];
 	if ($columnname =~ /Qual/i) {
 		push(@qualcolumns, $i);
-	} elsif ($columnname =~ /Depth/i) {
+	} elsif ($columnname =~ /Depth/i && $columnname ne 'averageDepth') {
 		push(@dpcolumns, $i);
 	} elsif ($columnname =~ /Gtype/i) {
 		$columnname =~ s/Gtype//; 
@@ -356,25 +356,29 @@ while ( <FILE> ) {
 				}
 				
 				my $thissubjflag = "";
-				if ($dp ne 'NA' || $qual ne 'NA') {															# if depth or qual information available
+				if ($dp ne 'NA' && $qual ne 'NA') {															# if depth or qual information available
 					if ($dp < $mindp) {
 						$thissubjflag .= "DP";
 					}
 					if ($qual < $minqual) {
 						$thissubjflag .= "GQ";
 					}
+					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
+					if ($dp >= $mindp || $qual >= $minqual) {	
+						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
+							$countcarriers++;
+						}
+					}
+				} elsif (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
+					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
+					$countcarriers++;
 				}
+				
+
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
-				if ($debugmode == 1) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP $thissubjflag\n"; }			## DEBUG
-
-				# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
-				if ($dp >= $mindp || $qual >= $minqual) {													# if genotype doesn't meet minimum DP/Qual requirements, set genotype to missing
-					if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
-						$countcarriers++;
-					}
-				}
+				if ($debugmode == 1) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
 			} 
 		}
 		
@@ -393,7 +397,7 @@ while ( <FILE> ) {
 				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1) {
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
-						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {							# FIX!!!! (allow for multiple kids)
+						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {							# FIX!!!! (verify that this allowa for multiple kids)
 							$thisfamilymatch += 1;
 							if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
 								$rejectquality[0] = 1;
@@ -455,7 +459,7 @@ while ( <FILE> ) {
 		if ($countfamiliesmatch > 0) {
 			my $data = join("\t", @line);
 			if ($inheritmodel eq 'unique') {
-				if ($countcarriers == 1) {
+				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
 					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single individual in a single family has the mutation
 				} else {
 					$count_notunique++;
@@ -480,7 +484,7 @@ close FILE;
 
 
 
-# Check putative hit list for all genes and count number of valid hits
+# Check putative hit list for all genes and count number of valid hits across all families
 print "\nChecking all genes for desired number of hits in desired number of families\n";
 my $countgeneswhits = 0;
 my $countgenesrejectedhits = 0;
@@ -513,7 +517,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  	}
 	} else {
 		$countgenesrejectedhits++;
-		print "Rejecting??\n";
+		if ($debugmode == 1) { print "Rejecting b/c not enough families have hits\n"; }
 	}
 }
 
@@ -538,7 +542,7 @@ print STDOUT "In $countgeneswhits gene(s), matched $countoutputvariants variants
 
 
 sub checkFamiliesvsModel {																										# sum up hits in each family
-	# account for possible compound het model, then recount matching families
+	# account for possible compound het model (count number of hits per affected child in family)
 	my ($inputhitdata_ref, $inheritmodel) = @_;
 	my %familieswHitsinGene;
 	# my @hitswithfamilyinfo;
@@ -548,21 +552,10 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 		my %matchingfamilies = %{${$hit}[1]};
 		my %matchingfamilyunits = %{${$hit}[2]};
 
-		# my $countfamiliessamehit = 0;
-		# my @familieswthishit;
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
-			# push(@familieswthishit, $familyid);
-			# $countfamiliessamehit++;
-			$familieswHitsinGene{$familyid}++;				
+			$familieswHitsinGene{$familyid}++;	
+			if ($debugmode == 1) { print "family=$familyid has a match? $ismatch\n"; }			
 		}
-		
-		# if ($inheritmodel eq 'unique') {
-		# 	if ($countfamiliessamehit < 1) {
-		# 		$familieswHitsinGene{$familyid}++;																										# DEBUG
-		# 	}
-		# } else {
-		# 	$familieswHitsinGene{$familyid}++;																										# DEBUG
-		# }
 
 		if ($inheritmodel eq 'compoundhet') {
 			while (my($familyid, $matchsubj) = each %matchingfamilyunits) {
@@ -571,19 +564,16 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
 				}
 				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
-				# push(@trackfamilyidswHits, $familyid);													# familyid might show up as having a hit at a particular variant even though they don't have two hits in that gene
+				# push(@trackfamilyidswHits, $familyid);												# familyid might show up as having a hit at a particular variant even though they don't have two hits in that gene
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
-					if ($member =~ m/child/i) {
+					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (verify that this allowa for multiple kids)
 						$familieswHitsinGene{$familyid}{$member}++;										# add one to hits in children
 					}
 				}				
 			}
 		}
-		
-		# my $newinfo = "$hitvarinfo\t".join(";", @trackfamilyidswHits);
-		# push(@hitswithfamilyinfo, $newinfo);
 	}
 	return (\%familieswHitsinGene);
 }
@@ -604,7 +594,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 					if ($member =~ m/child/i && ${$familyhits}{$member} >= 2) {
 						$counthitsinfamily++;																
 					}
-					if (($member eq 'mother' || $member eq 'father') && ${$familyhits}{$member} >= 1) {
+					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (verify that this allowa for multiple kids)
 						$counthitsinfamily++;
 					}
 				}
@@ -617,6 +607,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				}
 			}
 		} else {
+			if ($debugmode == 1) { print "family=$familyid has hits? $familyhits\n"; }
 			if ($familyhits >= 1) {
 				$countfamiliesmatch++;
 			}
