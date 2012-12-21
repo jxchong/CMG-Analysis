@@ -9,3 +9,5 @@ chrom	position	type	referenceBase	alternateBase	filterFlagGATK	averageDepth	gene
 3	4	SNP	G	A	PASS	78	FAKECMPHET	0	0	missense	VAL/MET	313/353	0.974	3.02	unknown	0	1537	R	R	R	R	R	G	G	G	R	0	0
 4	1	SNP	C	T	PASS	114	FAKEHOM	0	0	missense	THR/MET	135/402	0.348	-0.762	unknown	0	1536	T	T	T	T	T	C	C	C	T	0	0
 4	2	SNP	G	A	PASS	94	FAKEHOM	0	0	missense	ARG/HIS	185/343	1	4.41	unknown	0	1537	G	G	G	G	G	A	R	R	G	0	0
+3	1	SNP	C	T	PASS	114	FAKECMPHET-MOSAIC	0	0	missense	THR/MET	135/402	0.348	-0.762	unknown	0	1536	C	C	C	C	C	Y	C	C	C	0	0
+3	2	SNP	G	A	PASS	94	FAKECMPHET-MOSAIC	0	0	missense	ARG/HIS	185/343	1	4.41	unknown	0	1537	G	G	G	G	G	R	G	R	G	0	0

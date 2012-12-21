@@ -36,7 +36,7 @@ GetOptions(
 	'mafcutoff:f' => \$mafcutoff,
 	'errorcutoff:f' => \$cmgfreqcutoff,
 	'dp:f' => \$mindp,
-	'qual:f' => \$minqual,
+	'gq:f' => \$minqual,
 	'debug:i' => \$debugmode,
 );
 
@@ -382,7 +382,7 @@ while ( <FILE> ) {
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
-				if ($debugmode >= 3) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
+				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation $subjectid genotype $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
 			} 
 		}
 		
@@ -397,11 +397,12 @@ while ( <FILE> ) {
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
 			my @rejectquality = (0,0);
 
-			if ($inheritmodel eq 'compoundhet' && $familysize >= 3) {							
-				if (($thisfamily{'father'}+$thisfamily{'mother'}) == 1) {
+			if ($inheritmodel =~ 'compoundhet' && $familysize >= 3) {							
+				if ( ($thisfamily{'father'}+$thisfamily{'mother'} == 1) || ($inheritmodel eq 'compoundhetmosaic' && $thisfamily{'father'}+$thisfamily{'mother'} == 2) ) {										# only one parent can be het
+					if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
-						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {							# FIX!!!! (verify that this allowa for multiple kids)
+						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
 							$thisfamilymatch += 1;
 							if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
 								$rejectquality[0] = 1;															# store whether someone failed the DP filter
@@ -422,7 +423,7 @@ while ( <FILE> ) {
 						if (($rejectquality[0]+$rejectquality[1]) == 0) {
 							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
 							$matchingfamilyunits{$familyid} = $matchsubj;
-							if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family(ies) has a hit in $gene:$pos 1\n"; }			## DEBUG
+							if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family(ies) has a hit in $gene:$pos\n"; }			## DEBUG
 						} else {
 							$countfamiliesrejectqual[0] += $rejectquality[0];
 							$countfamiliesrejectqual[1] += $rejectquality[1];
@@ -463,9 +464,8 @@ while ( <FILE> ) {
 		$count_dpexclude += $countfamiliesrejectqual[0];
 		$count_qualexclude += $countfamiliesrejectqual[1];
 
-		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos countfamiliesmatchmodel=$countfamiliesmatchmodel 2\n"; }			## DEBUG
+		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit at $gene:$pos\n"; }			## DEBUG
 		if ($countfamiliesmatchmodel > 0) {
-			if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos 3\n"; }			## DEBUG
 			my $data = join("\t", @line);
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -475,7 +475,6 @@ while ( <FILE> ) {
 					if ($debugmode >= 2) { print STDOUT "rejecting b/c of not unique\n"; }			## DEBUG
 				}
 			} else {
-				if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos 4\n"; }			## DEBUG
 				push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
 			}
 		}
@@ -557,7 +556,6 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 	# account for possible compound het model (count number of hits per affected child in family)
 	my ($inputhitdata_ref, $inheritmodel) = @_;
 	my %familieswHitsinGene;
-	# my @hitswithfamilyinfo;
 	foreach my $hit (@{$inputhitdata_ref}) {
 		my $hitvarinfo = ${$hit}[0];
 			my @thishit = split("\t", $hitvarinfo);
@@ -566,10 +564,11 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
 			$familieswHitsinGene{$familyid}++;	
-			if ($debugmode >= 2) { print "family=$familyid has a match at @thishit ? $ismatch\n"; }			
+			if ($debugmode >= 2) { print "family=$familyid has a match\n"; }			
 		}
 
-		if ($inheritmodel eq 'compoundhet') {
+		# total up hits per family member
+		if ($inheritmodel =~ 'compoundhet') {
 			if ($debugmode >= 1) { print "For this hit, implementing compoundhet model (add to total hits per individual in total ".scalar(keys %matchingfamilyunits)." family units)\n"; }	
 			while (my($familyid, $matchsubj) = each %matchingfamilyunits) {
 				if ($debugmode >= 1) { print "Counting hits in individuals in family=$familyid\n"; }	
@@ -579,7 +578,6 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 				}
 				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
 				if ($debugmode >= 1) { print "a hit in family=$familyid comes from $matchsubj\n"; }	
-				# push(@trackfamilyidswHits, $familyid);												# familyid might show up as having a hit at a particular variant even though they don't have two hits in that gene
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
@@ -602,19 +600,27 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 	my $countfamiliesmatch = 0;
 	my @trackfamilyidswHits;
 	while (my($familyid, $familyhits) = each %familieswHitsinGene) {																		
-		if ($inheritmodel eq 'compoundhet') {
+		if ($inheritmodel =~ 'compoundhet') {
 			if (ref($familyhits) eq 'HASH') {
 				if ($debugmode >= 1) { print "Counting hits in each individual in $familyid\n"; }	
 				my $counthitsinfamily = 0;
 				my @familymembers = keys %{$familyhits};
 				foreach my $member (@familymembers) {
 					if ($debugmode >= 1) { print "${$familyhits}{$member} hit(s) in $member\n"; }	
-					if (($member eq 'mother' || $member eq 'father') && ${$familyhits}{$member} >= 1) {
-						$counthitsinfamily++;
-					} elsif ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {							# FIX!!!! (verify that this allowa for multiple kids)
+					if ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {
 						$counthitsinfamily++;
 					}
 				}
+				# if ($inheritmodel eq 'compoundhetmosaic') {
+				# 	if ((${$familyhits}{'mother'} == 0 && ${$familyhits}{'father'} >= 1) ^ (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} == 0)) {
+				# 		$counthitsinfamily++;
+				# 	}
+				# } elsif ($inheritmodel eq 'compoundhet') {
+					if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
+						$counthitsinfamily += 2;
+					}
+				# }
+
 				if ($debugmode >= 1) { print "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
 				
 				if ($counthitsinfamily == scalar(@familymembers)) {
