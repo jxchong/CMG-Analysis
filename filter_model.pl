@@ -13,7 +13,7 @@ use Getopt::Long;
 
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $minhitsperfamily);
 my $debugmode;
 my %genehits;
 my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
@@ -29,6 +29,7 @@ GetOptions(
 	'out=s' => \$outputfile,
 	'subjectreq=s' => \$subjectdeffile,
 	'minhits=i' => \$minhits,
+	'minhitsperfamily:i' => \$minhitsperfamily,
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
 	'excludefunction=s' => \$excludeGVSfunction,
@@ -312,7 +313,7 @@ while ( <FILE> ) {
 	
 	my ($iserror, $iscommon) = (0,0);
 	my $freqinCMG = $line[$freqinCMGcol]/100;							# storing allele freq as percentage
-	my $freqinOutside = $line[$freqinOutsidecol]/100;							# storing allele freq as percentage
+	my $freqinOutside = $line[$freqinOutsidecol]/100;					# storing allele freq as percentage
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
@@ -418,12 +419,14 @@ while ( <FILE> ) {
 					if ($thisfamily{'mother'} == 1) {
 						$matchsubj = 'mother';
 					}
-					if ($thisfamilymatch == ($familysize-2)) {													# if all affected children have at least one hit
+					if ($thisfamilymatch == ($familysize-2) || ($countuniquefamilies==1 && $thisfamilymatch >= $minhitsperfamily)) {													# if all affected children have at least one hit
 						$countfamiliesmatchmodel++;
 						if (($rejectquality[0]+$rejectquality[1]) == 0) {
 							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
-							$matchingfamilyunits{$familyid} = $matchsubj;
-							if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family(ies) has a hit in $gene:$pos\n"; }			## DEBUG
+							$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
+							foreach my $member (@familymembers) {
+								$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
+							}
 						} else {
 							$countfamiliesrejectqual[0] += $rejectquality[0];
 							$countfamiliesrejectqual[1] += $rejectquality[1];
@@ -443,7 +446,7 @@ while ( <FILE> ) {
 					}
 				}
 
-				if ($thisfamilymatch == $familysize) {
+				if ($thisfamilymatch == $familysize || ($countuniquefamilies==1 && $thisfamilymatch >= ($minhitsperfamily+2))) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						$countfamiliesmatchmodel += 1;
@@ -520,7 +523,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  		my $hitvarinfo = ${$hit}[0];
 			my %matchingfamilies = %{${$hit}[1]};
 			my %matchingfamilyunits = %{${$hit}[2]};
-			if ($debugmode >= 1) { print "Enough families have hits:".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)."\n"; }
+			if ($debugmode >= 1) { print "Enough families, total=".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)." have hits\n"; }
 			
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
@@ -528,7 +531,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  	}
 	} else {
 		$countgenesrejectedhits++;
-		if ($debugmode >= 1) { print "Rejecting $gene b/c not enough families have hits\n"; }
+		if ($debugmode >= 1) { print "Rejecting $gene b/c not enough families/subjects within family have hits\n"; }
 	}
 }
 
@@ -570,20 +573,21 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 		# total up hits per family member
 		if ($inheritmodel =~ 'compoundhet') {
 			if ($debugmode >= 1) { print "For this hit, implementing compoundhet model (add to total hits per individual in total ".scalar(keys %matchingfamilyunits)." family units)\n"; }	
-			while (my($familyid, $matchsubj) = each %matchingfamilyunits) {
+			while (my($familyid, $thisfamilydata_ref) = each %matchingfamilyunits) {
 				if ($debugmode >= 1) { print "Counting hits in individuals in family=$familyid\n"; }	
 				if (!defined $familieswHitsinGene{$familyid}) {
 					$familieswHitsinGene{$familyid}{'father'} = 0;
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
 				}
+				my $matchsubj = ${$thisfamilydata_ref}{'source'};
 				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
 				if ($debugmode >= 1) { print "a hit in family=$familyid comes from $matchsubj\n"; }	
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
-					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (verify that this allowa for multiple kids)
-						$familieswHitsinGene{$familyid}{$member}++;										# add one to hits in children
-						if ($debugmode >= 2) { print "family=$familyid $member has $familieswHitsinGene{$familyid}{$member} hits\n"; }			
+					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (need to accomodate allowing for some kids with no hits)
+						$familieswHitsinGene{$familyid}{$member} += ${$thisfamilydata_ref}{$member};								# add one to hits in children
+						if ($debugmode >= 2) { print "family=$familyid $member added ${$thisfamilydata_ref}{$member} hits making a total $familieswHitsinGene{$familyid}{$member} hits\n"; }			
 					}
 				}				
 			}
@@ -611,21 +615,17 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 						$counthitsinfamily++;
 					}
 				}
-				# if ($inheritmodel eq 'compoundhetmosaic') {
-				# 	if ((${$familyhits}{'mother'} == 0 && ${$familyhits}{'father'} >= 1) ^ (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} == 0)) {
-				# 		$counthitsinfamily++;
-				# 	}
-				# } elsif ($inheritmodel eq 'compoundhet') {
-					if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
-						$counthitsinfamily += 2;
-					}
-				# }
 
 				if ($debugmode >= 1) { print "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
 				
-				if ($counthitsinfamily == scalar(@familymembers)) {
-					$countfamiliesmatch++;
+				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
+					# $counthitsinfamily += 2;
+					if ($counthitsinfamily >= $minhitsperfamily) {
+						$countfamiliesmatch++;
+					}
 				}
+				
+
 			} elsif (!ref($familyhits)) {																									
 				if ($familyhits >= 2) {
 					$countfamiliesmatch++;
