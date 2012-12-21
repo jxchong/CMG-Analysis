@@ -68,7 +68,11 @@ if (!defined $cmgfreqcutoff) {
 } 
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
-} 
+} elsif ($inheritmodel =~ 'compoundhet') {
+	if (!defined $minhitsperfamily) {
+		optionUsage("option --minhitsperfamily not defined\n");
+	}
+}
 if (!defined $excludeGVSfunction) {
 	optionUsage("option --excludefunction not defined\n");
 }
@@ -90,7 +94,7 @@ if ($filters eq 'all' || $filters eq 'any') {
 
 my %GVStoexclude;
 if ($excludeGVSfunction eq 'default') {
-	%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5);
+	%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5 none);
 } elsif ($excludeGVSfunction eq 'none')  {
 	%GVStoexclude = map {$_ => 1} qw(NA);
 } else {
