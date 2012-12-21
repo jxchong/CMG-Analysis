@@ -1,0 +1,9 @@
+1	40020	0	0	child	het
+2	40022	0	0	child	het
+3	40023	0	0	child	het
+4	40024	0	0	child	het
+5	40026	0	0	child	het
+6	40028	40029	40030	child	het
+6	40029	0	0	father	het
+6	40030	0	0	mother	het
+7	40031	0	0	child	het
