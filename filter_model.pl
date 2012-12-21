@@ -63,7 +63,7 @@ if (!defined $mafcutoff) {
 	$mafcutoff = 0.01;
 }
 if (!defined $cmgfreqcutoff) {
-	$mafcutoff = 0.2;
+	$cmgfreqcutoff = 0.2;
 } 
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
@@ -74,7 +74,7 @@ if (!defined $excludeGVSfunction) {
 if (!defined $debugmode) {
 	$debugmode = 0;
 } else {
-	print STDOUT "Debug mode is on\n";
+	print STDOUT "Debug mode (#$debugmode) is on\n";
 }
 
 
@@ -209,7 +209,11 @@ while ( <FILE> ) {
 	
 	if ($printparams == 0) {
 		print LOG "Requiring hits in gene in at least $minhits subjects/families\n";
-		print LOG "Genotypes require at least $mindp depth and at least $minqual qual (if values available), otherwise genotype set to be missing\n";
+		if (@dpcolumns && @qualcolumns) {
+			print LOG "Genotypes require at least $mindp depth and at least $minqual qual, otherwise genotype set to be missing\n";
+		} else {
+			print LOG "Per-sample depth and quality information not available\n";
+		}
 		print LOG "Missing genotypes/no calls are counted as: $isNhit\n";
 		print LOG "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
 		print LOG "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
@@ -304,7 +308,7 @@ while ( <FILE> ) {
 		$workingchr = $chr;
 	}
 	
-	if ($debugmode == 1) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
+	if ($debugmode >= 2) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
 	
 	my ($iserror, $iscommon) = (0,0);
 	my $freqinCMG = $line[$freqinCMGcol]/100;							# storing allele freq as percentage
@@ -312,24 +316,24 @@ while ( <FILE> ) {
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
-		if ($debugmode == 1) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
 	}
 	if ($freqinOutside > $mafcutoff) {
 		$iscommon = 1;
 		$countcommonvariants++;
-		if ($debugmode == 1) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
 	}				
 	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact) == 1) {
 		$count_variants_excluded_function++;
-		if ($debugmode == 1) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
 	}
 	if (passGATKfilters(\%allowedGATKfilters, $filterset) == 0) {
 		$count_variants_excluded_gatk++;
-		if ($debugmode == 1) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
 	}
 
 	if ($iserror==0 && $iscommon==0 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || passGATKfilters(\%allowedGATKfilters, $filterset))) {
-		if ($debugmode == 1) { print STDOUT "variant passes initial filters\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "variant at $pos passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
 		my %qualityflags;
@@ -378,13 +382,13 @@ while ( <FILE> ) {
 				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
-				if ($debugmode == 1) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
+				if ($debugmode >= 3) { print STDOUT "$familyid-$relation $subjectid genotype is/is not a match to $desiredgeno: $ismatch with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
 			} 
 		}
 		
 		my @countfamiliesrejectqual = (0,0);
 		my $countfamiliesmatchmodel = 0;
-		my $countfamiliesmatch = 0;
+		# my $countfamiliesmatch = 0;
 		my %matchingfamilies;
 		my %matchingfamilyunits;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
@@ -400,9 +404,9 @@ while ( <FILE> ) {
 						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {							# FIX!!!! (verify that this allowa for multiple kids)
 							$thisfamilymatch += 1;
 							if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
-								$rejectquality[0] = 1;
+								$rejectquality[0] = 1;															# store whether someone failed the DP filter
 							} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
-								$rejectquality[1] = 1;
+								$rejectquality[1] = 1;															# store whether someone failed the GQ filter
 							}
 						}
 					}
@@ -416,11 +420,13 @@ while ( <FILE> ) {
 					if ($thisfamilymatch == ($familysize-2)) {													# if all affected children have at least one hit
 						$countfamiliesmatchmodel++;
 						if (($rejectquality[0]+$rejectquality[1]) == 0) {
+							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
 							$matchingfamilyunits{$familyid} = $matchsubj;
+							if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family(ies) has a hit in $gene:$pos 1\n"; }			## DEBUG
 						} else {
 							$countfamiliesrejectqual[0] += $rejectquality[0];
 							$countfamiliesrejectqual[1] += $rejectquality[1];
-							if ($debugmode == 1) { print STDOUT "rejecting b/c GQ/DP\n"; }			## DEBUG
+							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit in $gene:$pos, the variant comes from $matchsubj but all members do NOT pass the GQ/DP check\n"; }
 						}
 					}
 				} 
@@ -439,16 +445,17 @@ while ( <FILE> ) {
 				if ($thisfamilymatch == $familysize) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
-						$countfamiliesmatch += 1;
+						$countfamiliesmatchmodel += 1;
 						$matchingfamilies{$familyid} = 1;
 					} else {
 						$countfamiliesrejectqual[0] += $rejectquality[0];
 						$countfamiliesrejectqual[1] += $rejectquality[1];
-						if ($debugmode == 1) { print STDOUT "rejecting b/c of GQ/DP\n"; }			## DEBUG
+						if ($debugmode >= 2) { print STDOUT "rejecting b/c of GQ/DP\n"; }			## DEBUG
 					}
 				}
 			}
 		}
+
 
 		if ($countfamiliesmatchmodel > 0) {
 			$countvariantsmatchmodel++;
@@ -456,16 +463,19 @@ while ( <FILE> ) {
 		$count_dpexclude += $countfamiliesrejectqual[0];
 		$count_qualexclude += $countfamiliesrejectqual[1];
 
-		if ($countfamiliesmatch > 0) {
+		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos countfamiliesmatchmodel=$countfamiliesmatchmodel 2\n"; }			## DEBUG
+		if ($countfamiliesmatchmodel > 0) {
+			if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos 3\n"; }			## DEBUG
 			my $data = join("\t", @line);
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
 					push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);						# under a unique de novo model, only store this as a hit if a single individual in a single family has the mutation
 				} else {
 					$count_notunique++;
-					if ($debugmode == 1) { print STDOUT "rejecting b/c of not unique\n"; }			## DEBUG
+					if ($debugmode >= 2) { print STDOUT "rejecting b/c of not unique\n"; }			## DEBUG
 				}
 			} else {
+				if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit in $gene:$pos 4\n"; }			## DEBUG
 				push(@{$genehits{$gene}}, [$data, \%matchingfamilies, \%matchingfamilyunits]);							# store this as a hit
 			}
 		}
@@ -473,7 +483,7 @@ while ( <FILE> ) {
 		$countexcludedvariants++;
 	}
 	
-	if ($debugmode == 1) { print STDOUT "\n"; }			## DEBUG
+	if ($debugmode >= 2) { print STDOUT "\n"; }			## DEBUG
 	
 	# if ($chr == 12) {
 	# 	print STDOUT "stopping at chromosome $chr\n";
@@ -493,13 +503,14 @@ my $genecounter = 0;
 my $totalgenes = scalar(keys %genehits);
 while (my ($gene, $results_ref) = each %genehits) {
 	$genecounter++;
-	# print "\n===========================================================================\n";
+	if ($debugmode >= 1) { print "\n===========================================================================\n"; }
 	if ($genecounter % 1000 == 0) {
 		print "Checking gene #$genecounter (out of $totalgenes) for hits\n";
 	}
 	my @hitdata = @{$results_ref};
 	
 	# account for possible compound het model, then count hits in each family for this gene
+	if ($debugmode >= 1) { print "in $gene:\n"; }		
 	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
 	# review all families for required number of hits in this gene
 	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
@@ -510,6 +521,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  		my $hitvarinfo = ${$hit}[0];
 			my %matchingfamilies = %{${$hit}[1]};
 			my %matchingfamilyunits = %{${$hit}[2]};
+			if ($debugmode >= 1) { print "Enough families have hits:".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)."\n"; }
 			
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
@@ -517,7 +529,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  	}
 	} else {
 		$countgenesrejectedhits++;
-		if ($debugmode == 1) { print "Rejecting b/c not enough families have hits\n"; }
+		if ($debugmode >= 1) { print "Rejecting $gene b/c not enough families have hits\n"; }
 	}
 }
 
@@ -554,22 +566,26 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
 			$familieswHitsinGene{$familyid}++;	
-			if ($debugmode == 1) { print "family=$familyid has a match? $ismatch\n"; }			
+			if ($debugmode >= 2) { print "family=$familyid has a match at @thishit ? $ismatch\n"; }			
 		}
 
 		if ($inheritmodel eq 'compoundhet') {
+			if ($debugmode >= 1) { print "For this hit, implementing compoundhet model (add to total hits per individual in total ".scalar(keys %matchingfamilyunits)." family units)\n"; }	
 			while (my($familyid, $matchsubj) = each %matchingfamilyunits) {
+				if ($debugmode >= 1) { print "Counting hits in individuals in family=$familyid\n"; }	
 				if (!defined $familieswHitsinGene{$familyid}) {
 					$familieswHitsinGene{$familyid}{'father'} = 0;
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
 				}
 				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
+				if ($debugmode >= 1) { print "a hit in family=$familyid comes from $matchsubj\n"; }	
 				# push(@trackfamilyidswHits, $familyid);												# familyid might show up as having a hit at a particular variant even though they don't have two hits in that gene
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
 					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (verify that this allowa for multiple kids)
 						$familieswHitsinGene{$familyid}{$member}++;										# add one to hits in children
+						if ($debugmode >= 2) { print "family=$familyid $member has $familieswHitsinGene{$familyid}{$member} hits\n"; }			
 					}
 				}				
 			}
@@ -588,16 +604,19 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 	while (my($familyid, $familyhits) = each %familieswHitsinGene) {																		
 		if ($inheritmodel eq 'compoundhet') {
 			if (ref($familyhits) eq 'HASH') {
+				if ($debugmode >= 1) { print "Counting hits in each individual in $familyid\n"; }	
 				my $counthitsinfamily = 0;
 				my @familymembers = keys %{$familyhits};
 				foreach my $member (@familymembers) {
-					if ($member =~ m/child/i && ${$familyhits}{$member} >= 2) {
-						$counthitsinfamily++;																
-					}
-					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (verify that this allowa for multiple kids)
+					if ($debugmode >= 1) { print "${$familyhits}{$member} hit(s) in $member\n"; }	
+					if (($member eq 'mother' || $member eq 'father') && ${$familyhits}{$member} >= 1) {
+						$counthitsinfamily++;
+					} elsif ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {							# FIX!!!! (verify that this allowa for multiple kids)
 						$counthitsinfamily++;
 					}
 				}
+				if ($debugmode >= 1) { print "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
+				
 				if ($counthitsinfamily == scalar(@familymembers)) {
 					$countfamiliesmatch++;
 				}
@@ -607,7 +626,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				}
 			}
 		} else {
-			if ($debugmode == 1) { print "family=$familyid has hits? $familyhits\n"; }
+			if ($debugmode >= 1) { print "family=$familyid has hits? $familyhits\n"; }
 			if ($familyhits >= 1) {
 				$countfamiliesmatch++;
 			}
