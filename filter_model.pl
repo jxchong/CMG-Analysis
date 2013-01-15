@@ -144,7 +144,7 @@ print STDOUT "Reading in genotypes from $inputfile\n";
 
 
 ###################### BEGIN parse the header #############################
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns);
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns);
 my $filehasfreqs = 0;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
@@ -170,6 +170,9 @@ for (my $i=0; $i<=$#header; $i++) {
 		push(@dpcolumns, $i);
 	} elsif ($columnname =~ /Gtype/i) {
 		$columnname =~ s/Gtype//; 
+	}
+	if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
+		push(@keepcolumns, $i);
 	}
 	if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
 		push(@genotypecolumns, $i);
@@ -205,7 +208,8 @@ if ($filehasfreqs == 1) {
 	die;
 }
 
-print OUT "$headerline\tFamilieswHits\n";
+# print OUT "$headerline\tFamilieswHits\n";
+print OUT join("\t", @header[@keepcolumns])."\tFamilieswHits\n";
 
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
@@ -384,7 +388,7 @@ while ( <FILE> ) {
 				}
 				
 
-				my $ismatch += checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
+				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
 				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation $subjectid genotype $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
@@ -449,8 +453,10 @@ while ( <FILE> ) {
 						}
 					}
 				}
-
-				if ($thisfamilymatch == $familysize || ($familysize>=2 && ($familysize-$thisfamilymatch) >= $maxmissesperfamily)) {
+				
+				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilymatch individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily\n"; }
+				
+				if ($thisfamilymatch == $familysize || ($familysize>=2 && ($familysize-$thisfamilymatch) <= $maxmissesperfamily)) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						$countfamiliesmatchmodel += 1;
@@ -531,7 +537,9 @@ while (my ($gene, $results_ref) = each %genehits) {
 			
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
-	  		print OUT "$hitvarinfo\t".join(";", @familyids)."\n";
+			my @hitvarinfoarray = split("\t", $hitvarinfo);
+	  		# print OUT "$hitvarinfo\t".join(";", @familyids)."\n";
+			print OUT join("\t", @hitvarinfoarray[@keepcolumns])."\t".join(";", @familyids)."\n";
 	  	}
 	} else {
 		$countgenesrejectedhits++;
@@ -628,8 +636,6 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 						$countfamiliesmatch++;
 					}
 				}
-				
-
 			} elsif (!ref($familyhits)) {																									
 				if ($familyhits >= 2) {
 					$countfamiliesmatch++;
