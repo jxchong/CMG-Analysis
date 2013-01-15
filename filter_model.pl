@@ -13,7 +13,7 @@ use Getopt::Long;
 
 
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $minhitsperfamily);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily);
 my $debugmode;
 my %genehits;
 my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
@@ -29,7 +29,7 @@ GetOptions(
 	'out=s' => \$outputfile,
 	'subjectreq=s' => \$subjectdeffile,
 	'minhits=i' => \$minhits,
-	'minhitsperfamily:i' => \$minhitsperfamily,
+	'maxmissesperfamily=i' => \$maxmissesperfamily,
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
 	'excludefunction=s' => \$excludeGVSfunction,
@@ -53,7 +53,9 @@ if (!defined $inputfile) {
 	optionUsage("option --GATKkeep not defined\n");
 } elsif (!defined $isNhit) {
 	optionUsage("option --N not defined\n");
-} 
+} elsif (!defined $maxmissesperfamily) {
+	optionUsage("option --maxmissesperfamily not defined\n");
+}
 if (!defined $mindp) {
 	$mindp = 10;
 }
@@ -68,11 +70,8 @@ if (!defined $cmgfreqcutoff) {
 } 
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
-} elsif ($inheritmodel =~ 'compoundhet') {
-	if (!defined $minhitsperfamily) {
-		optionUsage("option --minhitsperfamily not defined\n");
-	}
 }
+
 if (!defined $excludeGVSfunction) {
 	optionUsage("option --excludefunction not defined\n");
 }
@@ -214,6 +213,7 @@ while ( <FILE> ) {
 	
 	if ($printparams == 0) {
 		print LOG "Requiring hits in gene in at least $minhits subjects/families\n";
+		print LOG "Allowing up to $maxmissesperfamily subjects per family to not have the correct genotype\n";
 		if (@dpcolumns && @qualcolumns) {
 			print LOG "Genotypes require at least $mindp depth and at least $minqual qual, otherwise genotype set to be missing\n";
 		} else {
@@ -423,7 +423,7 @@ while ( <FILE> ) {
 					if ($thisfamily{'mother'} == 1) {
 						$matchsubj = 'mother';
 					}
-					if ($thisfamilymatch == ($familysize-2) || ($countuniquefamilies==1 && $thisfamilymatch >= $minhitsperfamily)) {													# if all affected children have at least one hit
+					if ($thisfamilymatch == ($familysize-2) || ($familysize-2-$thisfamilymatch <= $maxmissesperfamily)) {					# if all affected children have at least one hit
 						$countfamiliesmatchmodel++;
 						if (($rejectquality[0]+$rejectquality[1]) == 0) {
 							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
@@ -450,7 +450,7 @@ while ( <FILE> ) {
 					}
 				}
 
-				if ($thisfamilymatch == $familysize || ($countuniquefamilies==1 && $thisfamilymatch >= ($minhitsperfamily+2))) {
+				if ($thisfamilymatch == $familysize || ($familysize>=2 && ($familysize-$thisfamilymatch) >= $maxmissesperfamily)) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						$countfamiliesmatchmodel += 1;
@@ -540,7 +540,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 }
 
 print LOG "\nResults summary:\n";
-print LOG "In $countgeneswhits gene(s), matched $countoutputvariants variants\n";
+print LOG "In $countgeneswhits gene(s), identified $countoutputvariants variants\n";
 print LOG "Total $countinputvariants variants in input\n";
 print LOG "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
 print LOG "\tN=$counterrorvariants are systematic errors\n";
@@ -624,7 +624,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				
 				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
 					# $counthitsinfamily += 2;
-					if ($counthitsinfamily >= $minhitsperfamily) {
+					if ($counthitsinfamily+$maxmissesperfamily+2 >= scalar(@familymembers)) {
 						$countfamiliesmatch++;
 					}
 				}
@@ -744,6 +744,7 @@ sub optionUsage {
 	print "\t--out\toutput file\n";
 	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
+	print "\t--maxmissesperfamily\tmax number of individuals with genotypes not matching model in each family unit\n";
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all')\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
