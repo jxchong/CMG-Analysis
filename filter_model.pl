@@ -456,7 +456,7 @@ while ( <FILE> ) {
 				
 				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilymatch individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily\n"; }
 				
-				if ($thisfamilymatch == $familysize || ($familysize>=2 && ($familysize-$thisfamilymatch) <= $maxmissesperfamily)) {
+				if ($thisfamilymatch == $familysize || ($familysize>=2 && $maxmissesperfamily>0 && ($familysize-$thisfamilymatch) <= $maxmissesperfamily)) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						$countfamiliesmatchmodel += 1;
