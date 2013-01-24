@@ -85,8 +85,8 @@ if (!defined $debugmode) {
 my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
-} elsif ($filters eq 'none') {
-	%allowedGATKfilters = map {$_ => 1} qw(NA);
+} elsif ($filters eq 'default') {
+	%allowedGATKfilters = map {$_ => 1} qw(PASS);
 } else {
 	%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 } 
@@ -116,8 +116,8 @@ open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 while (<SUBJECTS>) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	print LOG "$_\n";
-	my ($familyid, $subjectid, $father, $mother, $relation, $desiredgeno) = split("\t", $_);
-	$subjects{$subjectid} = [$familyid, $father, $mother, $relation, $desiredgeno];
+	my ($familyid, $subjectid, $father, $mother, $sex, $relation, $desiredgeno) = split("\t", $_);
+	$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
 	push(@orderedsubjects, $subjectid);
 	if ($subjectid !~ '#') {
 		push(@{$countuniquefamilies_hash{$familyid}}, $relation);
@@ -359,7 +359,7 @@ while ( <FILE> ) {
 			my $genotype = $subjectgenotypes[$i];
 			my $subjectid = $orderedsubjects[$i];
 			if ($subjectid !~ '#') {
-				my ($familyid, $father, $mother, $relation, $desiredgeno) = @{$subjects{$subjectid}};
+				my ($familyid, $father, $mother, $sex, $relation, $desiredgeno) = @{$subjects{$subjectid}};
 				if (!exists $checkfamilies{$familyid}) {									# initialize family data
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
@@ -378,17 +378,17 @@ while ( <FILE> ) {
 					}
 					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
 					if ($dp >= $mindp || $qual >= $minqual) {	
-						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
+						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr)) {
 							$countcarriers++;
 						}
 					}
-				} elsif (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit)) {
+				} elsif (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr)) {
 					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
 					$countcarriers++;
 				}
 				
 
-				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit);	
+				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
 				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation $subjectid genotype $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
@@ -684,7 +684,7 @@ sub shouldfunctionFilter {
 }
 
 sub checkGenoMatch {
-	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit) = @_;
+	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr) = @_;
 		
 	my @alleles;
 	my $ismatch = 0;
@@ -720,6 +720,9 @@ sub checkGenoMatch {
 			if ($alleles[0] eq $ref && $alleles[1] eq $alt) {
 				$ismatch = 1;
 			}
+			if ($sex == 1 && ($chr eq "X" || $chr eq "Y") && ($alleles[0] eq $alt && $alleles[1] eq $alt)) {
+				$ismatch = 1;
+			}
 		} 
 	}
 	return $ismatch;
@@ -751,7 +754,8 @@ sub optionUsage {
 	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
 	print "\t--maxmissesperfamily\tmax number of individuals with genotypes not matching model in each family unit\n";
-	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all')\n";
+	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all' or 'default')\n";
+	print "\t\tdefault=PASS\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
 		print "\t\tdefault=intron,intergenic,coding-synonymous,utr-3,utr-5,near-gene-3,near-gene-5\n";
