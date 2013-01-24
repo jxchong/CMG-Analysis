@@ -561,7 +561,7 @@ print LOG "Filtered out candidate hits from list of $countvariantsmatchmodel var
 print LOG "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
 print LOG "\tN=$count_notunique excluded because they were not unique within this dataset\n";
 close LOG;
-
+ 
 
 
 print STDOUT "In $countgeneswhits gene(s), matched $countoutputvariants variants\n";
