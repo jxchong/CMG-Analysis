@@ -20,8 +20,8 @@ GetOptions(
 	'out=s' => \$outputfile,
 );
 
-if (!defined $inputfile) {
-	optionUsage("option --in not defined\n");
+if (!defined $vcfinput) {
+	optionUsage("option --vcf not defined\n");
 } elsif (!defined $outputfile) {
 	optionUsage("option --out not defined\n");
 } 
@@ -56,19 +56,31 @@ while ( <FILE> ) {
 			}
 		}
 		@subjectgenotypecols = $beginsubjectcols..$#header;
+		print "Chr\tPos\tref\talt\tfilterFlagGATK\tgeneList\t".join("\t", @header[@subjectgenotypecols])."\t";
+		print "functionGVS\tproteinchange\tcDNAchange\tconsScoreGERP\tpolyPhen2\tSIFT\t";
+		print join("Depth\t", @header[@subjectgenotypecols])."Depth\t";
+		print join("Qual\t", @header[@subjectgenotypecols])."Qual\t";
+		print "PrctFreqinCMG\tPrctFreqinOutsidePop\n";
 	} else {
 		my ($chr, $pos, $rsid, $ref, $alt, $varqual, $varfilter, $varinfo, $varformat) = @line[0..($beginsubjectcols-1)];
 		my (@subjectgts, @subjectgtquals, @subjectdepths);
 		if ($varformat eq 'GT:AD:DP:GQ:PL') {
 			foreach my $datastring (@line[@subjectgenotypecols]) {
-				my @metrics = split(":", $datastring);
-				push(@subjectgts, $metrics[0]);
-				push(@subjectgtquals, $metrics[3]);
-				push(@subjectdepths, $metrics[2]);
+				if ($datastring eq './.') {
+					push(@subjectgts, 'N');
+					push(@subjectgtquals, "NA");
+					push(@subjectdepths, "NA");
+				} else {
+					my @metrics = split(":", $datastring);
+					push(@subjectgts, $metrics[0]);
+					push(@subjectgtquals, $metrics[3]);
+					push(@subjectdepths, $metrics[2]);	
+				}
 			}
 		}
 		# $vcfdata{$chr}{$pos}{"$ref.$alt"} = [$varfilter, join("\t", @subjectgts), join("\t", @subjectgtquals), join("\t", @subjectdepths)];	
-		print "$chr\t$pos\t$ref\t$alt\t".$varfilter, join("\t", @subjectgts)."\t".join("\t", @subjectgtquals)."\t".join("\t", @subjectdepths)."\n";
+		# print "$_\n";
+		print "$chr\t$pos\t$ref\t$alt\t$varfilter\tGene"."\t".join("\t", @subjectgts)."\t".join("\t", @subjectdepths)."\t".join("\t", @subjectgtquals)."\n";
 		exit;
 	}
 }
