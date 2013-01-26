@@ -282,28 +282,30 @@ while ( <FILE> ) {
 		$polyphen = $line[$polyphencol];
 		# $inUWexomes = $line[16];
 		# $UWexomescovered = $line[17];
-	} elsif ($inputfile =~ m/\.vcf/) {
-		($chr, $pos, $ref, $alt) = ($line[0], $line[1], $line[3], $line[4]);
-		if ($inputfile =~ m/snps/i) {
-			$vartype = 'SNP';
-		} elsif ($inputfile =~ m/indels/i) {
-			$vartype = 'indel';
-		}
-		$filterset = $line[$gatkfiltercol];
-		@subjectgenotypes = @line[@genotypecolumns];
-		if (@dpcolumns) {
-			@subjectdps = @line[@dpcolumns];
-		}
-		if (@qualcolumns) {
-			@subjectquals = @line[@qualcolumns];			
-		}
+	} 
+	# elsif ($inputfile =~ m/\.vcf/) {
+	# 	($chr, $pos, $ref, $alt) = ($line[0], $line[1], $line[3], $line[4]);
+	# 	if ($inputfile =~ m/snps/i) {
+	# 		$vartype = 'SNP';
+	# 	} elsif ($inputfile =~ m/indels/i) {
+	# 		$vartype = 'indel';
+	# 	}
+	# 	$filterset = $line[$gatkfiltercol];
+	# 	@subjectgenotypes = @line[@genotypecolumns];
+	# 	if (@dpcolumns) {
+	# 		@subjectdps = @line[@dpcolumns];
+	# 	}
+	# 	if (@qualcolumns) {
+	# 		@subjectquals = @line[@qualcolumns];			
+	# 	}
 		
 		# $gene = $line[7];
 		# $functionimpact = $line[10];
 		# $phastcons = $line[$phastconscol];
 		# $gerp = $line[$gerpcol];
 		# $polyphen = $line[$polyphencol];
-	} else {
+	# } 
+	else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
 	
