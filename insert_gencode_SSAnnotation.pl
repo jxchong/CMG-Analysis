@@ -62,6 +62,7 @@ while ( <FILE> ) {
 	my @line = split ("\t", $_);
 	my @annovarannot = @{$annovar{$linecounter}};
 	my ($newgene, $newfunc, $newaa, $newproteinpos, $newcdnapos, $ensembl, $exon);
+	$newfunc = $annovarannot[0];
 	$newgene = $annovarannot[1];
 	
 	if ($annovarannot[0] =~ 'exonic' && $annovarannot[0] !~ 'ncRNA') {
@@ -85,7 +86,7 @@ while ( <FILE> ) {
 			($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(unkn unkn unkn unkn);
 		}
 	} else {
-		($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(NA NA NA NA);
+		($newaa, $newproteinpos, $newcdnapos) = qw(NA NA NA);
 	}
 	# replace genelist, functionGVS, aminoAcids, proteinPosition, cDNAposition
 	print OUT join("\t", @line[0..6]);

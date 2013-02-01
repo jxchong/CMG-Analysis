@@ -46,14 +46,14 @@ my %iupac = (
 );
 
 
-# perl ~/bin/annovar/convert2annovar.pl .vcf -format vcf4 > output.annovar
+# perl ~/bin/annovar/convert2annovar.pl park.remapped_and_pindel.sorted.reminvalid.vcf -format vcf4 > park.remapped_and_pindel.sorted.reminvalid.annovar
+# perl ~/bin/annovar/annotate_variation.pl park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ -dbtype wgEncodeGencodeBasicV14 -geneanno --buildver hg19
+# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype avsift park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ --buildver hg19 
+# perl ~/bin/annovar/annotate_variation.pl park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ -filter -dbtype ljb_pp2  --buildver hg19 
 
-# my $gencodeannotate = `perl ~/bin/annovar/annotate_variation.pl $annovarinput ~/bin/annovar/humandb/ -dbtype wgEncodeGencodeBasicV14 --buildver hg19`;
-# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype avsift park.remapped_and_pindel.sorted.annovar ~/bin/annovar/humandb/ --buildver hg19 
-# perl ~/bin/annovar/annotate_variation.pl park.remapped_and_pindel.sorted.annovar ~/bin/annovar/humandb/ -filter -dbtype ljb_pp2  --buildver hg19 
-# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype gerp++gt2 park.remapped_and_pindel.sorted.annovar ~/bin/annovar/humandb/ --buildver hg19
-# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype esp6500_all park.remapped_and_pindel.sorted.annovar ~/bin/annovar/humandb/ --buildver hg19
-# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype 1000g2012apr_al park.remapped_and_pindel.sorted.annovar ~/bin/annovar/humandb/ --buildver hg19
+# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype gerp++gt2 park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ --buildver hg19
+# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype esp6500_all park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ --buildver hg19
+# perl ~/bin/annovar/annotate_variation.pl -filter -dbtype 1000g2012apr_al park.remapped_and_pindel.sorted.reminvalid.annovar ~/bin/annovar/humandb/ --buildver hg19
 
 
 
@@ -62,65 +62,68 @@ my $linecounter = 1;
 open (FILE, "$annovarinput.variant_function") or die "Cannot read $annovarinput.variant_function file: $!.\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
-	my @line = split ("\t", $_);
-	$annovar{$linecounter} = [@line[0..1]];		# exonic or not, gene
+	my ($component, $gene, $chr, $start, $stop, @line) = split ("\t", $_);
+	if (defined $annovar{"$chr.$start"}) {
+		print "$chr.$start already exists: $_\n";
+	}
+	$annovar{"$chr.$start.$stop."}{'variantcomponent'} = $component;					# exonic or not, gene
+	$annovar{"$chr.$start.$stop"}{'gene'} = $gene;									# gene
 	$linecounter++;
 }
 close FILE;
 
 
-open (FILE, "$annovarinput.exonic_variant_function") or die "Cannot read $$annovarinput.exonic_variant_function file: $!.\n";
+#  whole gene (frameshift insertion, annovar=+1 vs vcf)
+
+open (FILE, "$annovarinput.exonic_variant_function") or die "Cannot read $annovarinput.exonic_variant_function file: $!.\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
-	my @line = split ("\t", $_);
-	my $linenum = $line[0];
-	$linenum =~ s/line//;
-	push(@{$annovar{$linenum}}, @line[1..2]);	# variant function, gene-related info
+	my ($linenum, $mutationtype, $geneannot, $chr, $start, $stop, @line) = split ("\t", $_);	
+	my ($newgene, $newfunc, $newaa, $newproteinpos, $newcdnapos, $ensembl, $exon);	
+	if ($annovar{"$chr.$start.$stop"}{'variantcomponent'} =~ 'exonic' && $annovar{"$chr.$start"}{'variantcomponent'} !~ 'ncRNA') {	
+		if ($mutationtype !~ m/unknown/i) {
+			$newfunc = translateGencodefxn($mutationtype);
+			if ($annovar{"$chr.$start.$stop"}{'variantcomponent'} =~ 'splic') {
+				$newfunc .= "splicing";
+			}
+			if ($geneannot =~ 'wholegene') {
+				($newaa, $newproteinpos, $newcdnapos) = qw(wholegene wholegene wholegene);
+			} else {
+				my @varannotations = split(",", $geneannot);
+				($newgene, $ensembl, $exon, $newcdnapos, $newproteinpos) = split(":", $varannotations[0]);
+				$newaa = $newproteinpos;
+			}
+		} else {
+			($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(unkn unkn unkn unkn);
+		}
+	} else {
+		($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(NA NA NA NA);
+	}
+	
+	$annovar{"$chr.$start.$stop"}{'mutationfunction'} = $newfunc;
+	$annovar{"$chr.$start.$stop"}{'mutationlocusinfo'} = [$newaa, $newcdnapos];
 }
 close FILE;
 
 
-# my @annovarannot = @{$annovar{$linecounter}};
-# my ($newgene, $newfunc, $newaa, $newproteinpos, $newcdnapos, $ensembl, $exon);
-# $newgene = $annovarannot[1];
-# 
-# if ($annovarannot[0] =~ 'exonic' && $annovarannot[0] !~ 'ncRNA') {
-# 	# if ($annovarannot[1] !~ 'synonymous') {
-# 	# 	print "@annovarannot\n";
-# 	# }
-# 	
-# 	if ($annovarannot[2] !~ m/unknown/i) {
-# 		$newfunc = translateGencodefxn($annovarannot[2]);
-# 		if ($annovarannot[0] =~ 'splic') {
-# 			$newfunc .= "splicing";
-# 		}
-# 		if ($annovarannot[3] =~ 'wholegene') {
-# 			($newaa, $newproteinpos, $newcdnapos) = qw(wholegene wholegene wholegene);
-# 		} else {
-# 			my @varannotations = my @annotation = split(",", $annovarannot[3]);
-# 			($newgene, $ensembl, $exon, $newcdnapos, $newproteinpos) = split(":", $varannotations[0]);
-# 			$newaa = $newproteinpos;
-# 		}
-# 	} else {
-# 		($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(unkn unkn unkn unkn);
-# 	}
-# } else {
-# 	($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(NA NA NA NA);
-# }
-# 
-# 
-# my %gene;
-# open (GENE, "$annovarinput.variant_function");
-# 	
-# close GENE;
 
+my @annotationsources = qw(gerp++gt2 avsift ljb_pph2);
+foreach my $annotsource (@annotationsources) {
+	open (FILE, "$annovarinput.hg19_".$annotsource."_dropped") or die "Cannot read $annovarinput.hg19_".$annotsource."_dropped file: $!.\n";
+	while ( <FILE> ) {
+		$_ =~ s/\s+$//;					# Remove line endings
+		my ($annotsource, $thisannot, $chr, $start, $stop, @line) = split ("\t", $_);
+		$annovar{"$chr.$start.$stop"}{$annotsource} = $thisannot;		
+	}
+	close FILE;
+}
 
 
 my %vcfdata;
 my @subjectgenotypecols;
 my $beginsubjectcols;
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
-open (FILE, "$vcfinput") or die "Cannot read $vcfinput file: $!.\n";
+open (FILE, "zcat $vcfinput |") or die "Cannot read $vcfinput file: $!.\n";
 while ( <FILE> ) {
 	if ($_ =~ '##') { next; }
 	$_ =~ s/\s+$//;					# Remove line endings
@@ -138,8 +141,8 @@ while ( <FILE> ) {
 		print "Chr\tPos\tref\talt\tfilterFlagGATK\tgeneList\tfunctionGVS\tproteinchange\tcDNAchange\tconsScoreGERP\tpolyPhen2\tSIFT\t";
 		print join("\t", @header[@subjectgenotypecols])."\t";
 		print join("Depth\t", @header[@subjectgenotypecols])."Depth\t";
-		print join("Qual\t", @header[@subjectgenotypecols])."Qual\t";
-		print "PrctFreqinCMG\tPrctFreqinOutsidePop\n";
+		print join("Qual\t", @header[@subjectgenotypecols])."Qual\n";
+		# print "PrctFreqinCMG\tPrctFreqinOutsidePop\n";
 	} else {
 		my ($chr, $pos, $rsid, $ref, $alt, $varqual, $varfilter, $varinfo, $varformat) = @line[0..($beginsubjectcols-1)];
 		my (@subjectgts, @subjectgtquals, @subjectdepths);
@@ -147,8 +150,8 @@ while ( <FILE> ) {
 			foreach my $datastring (@line[@subjectgenotypecols]) {
 				if ($datastring eq './.') {
 					push(@subjectgts, 'N');
-					push(@subjectgtquals, "NA");
-					push(@subjectdepths, "NA");
+					push(@subjectgtquals, "0");
+					push(@subjectdepths, "0");
 				} else {
 					my @metrics = split(":", $datastring);
 					push(@subjectgts, vcfgeno2iupac($metrics[0], $ref, $alt));
@@ -157,18 +160,25 @@ while ( <FILE> ) {
 				}
 			}
 		}
-		my ($gene, $function, $protein, $cdna, $gerp, $polyphen, $sift);
 		
-		
-		
-		# $vcfdata{$chr}{$pos}{"$ref.$alt"} = [$varfilter, join("\t", @subjectgts), join("\t", @subjectgtquals), join("\t", @subjectdepths)];	
+		my $variantlookup = "$chr.$pos.$pos";
+		my $gene = $annovar{$variantlookup}{'gene'};
+		my $component = $annovar{$variantlookup}{'variantcomponent'};
+		my $function = $annovar{$variantlookup}{'mutationfunction'};
+		my ($protein, $cdna) = @{$annovar{$variantlookup}{'mutationlocusinfo'}};
+		my $gerp = $annovar{$variantlookup}{'gerp++gt2'};
+		my $polyphen = $annovar{$variantlookup}{'ljb_pph2'};
+		my $sift = $annovar{$variantlookup}{'avsift'};
+
 		if (length($ref)>12) {
 			$ref = 0;
 		}
 		if (length($alt)>12) {
 			$alt = 1;
 		}
-		print "$chr\t$pos\t$ref\t$alt\t$varfilter\tGene"."\t".join("\t", @subjectgts)."\t".join("\t", @subjectdepths)."\t".join("\t", @subjectgtquals)."\n";
+		print "$chr\t$pos\t$ref\t$alt\t$varfilter\t$gene\t$function\t$protein\t$cdna\t$gerp\t$polyphen\t$sift\t";
+		print join("\t", @subjectgts)."\t".join("\t", @subjectdepths)."\t".join("\t", @subjectgtquals)."\n";
+		# print "\t$prctfrqcmg\t$prctfrqoutside\n";
 		exit;
 	}
 }
@@ -201,7 +211,30 @@ sub vcfgeno2iupac {
 
 
 
-
+sub translateGencodefxn {
+	my $gencodefxn = $_[0];
+	$gencodefxn =~ s/ SNV//;
+	
+	if ($gencodefxn eq 'nonsynonymous') {
+		$gencodefxn = 'missense';
+	}
+	if ($gencodefxn eq 'stopgain') {
+		$gencodefxn = 'stop-gained';
+	}
+	if ($gencodefxn eq 'stoploss') {
+		$gencodefxn = 'stop-lost';
+	}
+	if ($gencodefxn eq 'UTR3') {
+		$gencodefxn = 'utr-3';
+	}
+	if ($gencodefxn eq 'UTR5') {
+		$gencodefxn = 'utr-5';
+	}
+	if ($gencodefxn eq 'intronic') {
+		$gencodefxn = 'intron';
+	}
+	return $gencodefxn;
+}
 
 
 
