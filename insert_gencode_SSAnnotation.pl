@@ -61,29 +61,39 @@ while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	my @line = split ("\t", $_);
 	my @annovarannot = @{$annovar{$linecounter}};
-	my ($newgene, $newfunc, $newaa, $newproteinpos, $newcdnapos, $ensembl, $exon);
+	my ($newgene, $newfunc, $newaa, $newproteinpos, $newcdnapos, $ensembl, $exon) = (("NA") x 7);
 	$newfunc = $annovarannot[0];
 	$newgene = $annovarannot[1];
 	
+	
 	if ($annovarannot[0] =~ 'exonic' && $annovarannot[0] !~ 'ncRNA') {
-		# if ($annovarannot[1] !~ 'synonymous') {
-		# 	print "@annovarannot\n";
-		# }
-		
+		if ($annovarannot[0] eq 'exonic;splicing') {
+			$newfunc .= "splicing";
+			my @geneannotations = split(";", $annovarannot[1]);
+			$newgene = $geneannotations[0];
+		}
 		if ($annovarannot[2] !~ m/unknown/i) {
 			$newfunc = translateGencodefxn($annovarannot[2]);
-			if ($annovarannot[0] =~ 'splic') {
-				$newfunc .= "splicing";
-			}
 			if ($annovarannot[3] =~ 'wholegene') {
 				($newaa, $newproteinpos, $newcdnapos) = qw(wholegene wholegene wholegene);
 			} else {
-				my @varannotations = my @annotation = split(",", $annovarannot[3]);
+				my @varannotations = split(",", $annovarannot[3]);
 				($newgene, $ensembl, $exon, $newcdnapos, $newproteinpos) = split(":", $varannotations[0]);
 				$newaa = $newproteinpos;
 			}
 		} else {
 			($newfunc, $newaa, $newproteinpos, $newcdnapos) = qw(unkn unkn unkn unkn);
+		}
+	} elsif ($annovarannot[0] eq 'splicing' || $annovarannot[0] eq 'ncRNA_splicing') {
+		if ($annovarannot[1] =~ /\(/) {
+			$annovarannot[1] =~ s/(\w+)\(//;
+			$newgene = $1;	
+			$annovarannot[1] =~ s/\)//;
+			my @tscrptannot = split(",", $annovarannot[1]);
+			($ensembl, $exon, $newcdnapos) = split(":", $tscrptannot[0]);
+		} else {
+			$newgene = $annovarannot[1];
+			($ensembl, $exon, $newcdnapos) = qw(NA NA NA);
 		}
 	} else {
 		($newaa, $newproteinpos, $newcdnapos) = qw(NA NA NA);

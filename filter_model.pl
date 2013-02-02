@@ -408,18 +408,18 @@ while ( <FILE> ) {
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
 			my @rejectquality = (0,0);
 
-			if ($inheritmodel =~ 'compoundhet' && $familysize >= 3) {							
+			if ($inheritmodel =~ 'compoundhet' && $familysize >= 3) {
 				if ( ($thisfamily{'father'}+$thisfamily{'mother'} == 1) || ($inheritmodel eq 'compoundhetmosaic' && $thisfamily{'father'}+$thisfamily{'mother'} == 2) ) {										# only one parent can be het
 					if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 					foreach my $member (@familymembers) {
+						if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
+							$rejectquality[0] = 1;															# store whether someone failed the DP filter
+						} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
+							$rejectquality[1] = 1;															# store whether someone failed the GQ filter
+						}
 						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
-							$thisfamilymatch += 1;
-							if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
-								$rejectquality[0] = 1;															# store whether someone failed the DP filter
-							} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
-								$rejectquality[1] = 1;															# store whether someone failed the GQ filter
-							}
+							$thisfamilymatch += 1;																# only counts matches in the kids
 						}
 					}
 					my $matchsubj;
@@ -445,9 +445,20 @@ while ( <FILE> ) {
 					}
 				} 
 			} else {
+				my $countparentmatches = 0;
+				my $nparents = 0;
+				my $nkids = 0;
 				while (my ($relation, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
-						$thisfamilymatch += $thismatch;
+						if ($relation eq 'father' || $relation eq 'mother') {
+							$nparents++;
+							if ($thismatch == 1) {
+								$countparentmatches++;
+							}
+						} 
+						
+						$thisfamilymatch += $thismatch;									
+
 						if ($qualityflags{$familyid}{$relation} =~ m/DP/i) {
 							$rejectquality[0] = 1;
 						} elsif ($qualityflags{$familyid}{$relation} =~ m/GQ/i) {
@@ -456,9 +467,10 @@ while ( <FILE> ) {
 					}
 				}
 				
-				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilymatch individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily\n"; }
-				
-				if ($thisfamilymatch == $familysize || ($familysize>=2 && $maxmissesperfamily>0 && ($familysize-$thisfamilymatch) <= $maxmissesperfamily)) {
+				$nkids = $familysize - $nparents;
+				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilymatch (including $countparentmatches matches from the parents) individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily miss among the $nkids kids\n"; }
+
+				if ($thisfamilymatch == $familysize || ($familysize>=2 && $maxmissesperfamily>0 && $countparentmatches==$nparents && ($nkids-($thisfamilymatch-$countparentmatches)) <= $maxmissesperfamily)) {
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						$countfamiliesmatchmodel += 1;
@@ -479,8 +491,8 @@ while ( <FILE> ) {
 		$count_dpexclude += $countfamiliesrejectqual[0];
 		$count_qualexclude += $countfamiliesrejectqual[1];
 
-		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units has a hit at $gene:$pos\n"; }			## DEBUG
-		if ($countfamiliesmatchmodel > 0) {
+		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units and ".scalar(keys %matchingfamilies)." families has a hit at $gene:$pos\n"; }			## DEBUG
+		if ((scalar(keys %matchingfamilyunits)+scalar(keys %matchingfamilies)) > 0) {
 			my $data = join("\t", @line);
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -755,7 +767,7 @@ sub optionUsage {
 	print "\t--out\toutput file\n";
 	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
-	print "\t--maxmissesperfamily\tmax number of individuals with genotypes not matching model in each family unit\n";
+	print "\t--maxmissesperfamily\tmax number of probands with genotypes not matching model in each family unit\n";
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all' or 'default')\n";
 	print "\t\tdefault=PASS\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
