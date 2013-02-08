@@ -393,7 +393,7 @@ while ( <FILE> ) {
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
-				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation $subjectid genotype $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
+				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation (sex=$sex) $subjectid genotype ($genotype) $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
 			} 
 		}
 		
@@ -480,6 +480,8 @@ while ( <FILE> ) {
 						$countfamiliesrejectqual[1] += $rejectquality[1];
 						if ($debugmode >= 2) { print STDOUT "rejecting b/c of GQ/DP\n"; }			## DEBUG
 					}
+				} else {
+					if ($debugmode >= 2) { print STDOUT "rejecting b/c not enough matches in family\n"; }			## DEBUG
 				}
 			}
 		}
