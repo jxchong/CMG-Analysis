@@ -100,8 +100,8 @@ sub readData {
 		die "Error: exit value $exit_value\n@popdata\n";
 	}
 	foreach (@popdata) {
-		my ($chr, $varpos, $ref, $alt, $freqinCMG, $freqinOutside) = split("\t", $_);
-		my $lookup = "$varpos.$ref.$alt";
+		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside) = split("\t", $_);
+		my $lookup = "$varstart.$ref.$alt";
 		$maxmafs{$lookup}{'error'} = $freqinCMG;
 		$maxmafs{$lookup}{'pop'} = $freqinOutside;
 	}
