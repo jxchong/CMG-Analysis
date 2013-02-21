@@ -17,7 +17,6 @@ my ($inputfile, $outputfile, $capturearray);
 GetOptions(
 	'in=s' => \$inputfile, 
 	'out=s' => \$outputfile,
-	# 'capture=s' => \$capturearray,
 );
 
 if (!defined $inputfile) {
