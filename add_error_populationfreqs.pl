@@ -53,11 +53,7 @@ print OUT join("\t", @header)."\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	my @line = split ("\t", $_);
-	my ($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
-
-	# old code, very slow; reads data from multiple files
-	# my $errorfreq = isSystematicError($chr,$pos,$vartype,$ref,$alt,$capturearray);
-	# my $maxmaf = isCommonVar($chr,$pos,$vartype,$ref,$alt);
+	my ($chr, $pos, $vartype, $ref, $alt) = @line[0..4];
 	
 	my %chr_contents;
 	if ($chr ne $workingchr) {
@@ -73,8 +69,7 @@ while ( <FILE> ) {
 		$maxpopmaf = $chr_contents{$lookup}{'pop'};
 	}
 
-	# print OUT join("\t", @line)."\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxpopmaf*100)."\n";			# already in percent if reading from my preformatted errorMaxAltAlleleFreq.tsv.vcf.gz
-		print OUT join("\t", @line)."\t".sprintf("%.4f", $errorfreq)."\t".sprintf("%.4f", $maxpopmaf)."\n";
+	print OUT join("\t", @line)."\t".sprintf("%.4f", $errorfreq)."\t".sprintf("%.4f", $maxpopmaf)."\n";
 }
 close FILE;
 
@@ -90,7 +85,7 @@ close OUT;
 sub readData {
 	my $currchr = $_[0];
 	
-	my %maxmafs;
+	my %maxmafs = ();
 	my $exit_value;
 
 	print "Reading in error/MAF data for chr $currchr\n";
