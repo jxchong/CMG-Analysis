@@ -49,7 +49,7 @@ open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 my $headerline = <FILE>;
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
-print OUT join("\t", @header)."\tPrctFreqinCMG\tPrctFreqinOutsidePop\n";
+print OUT join("\t", @header)."\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	my @line = split ("\t", $_);
@@ -235,7 +235,7 @@ sub optionUsage {
 	my $errorString = $_[0];
 	print "$errorString";
 	print "perl $0 \n";
-	print "\t--in\tinput file\n";
+	print "\t--in\tinput SSAnnotation file\n";
 	print "\t--out\toutput file\n";
 	# print "\t--capture\tcapture array used in sequencing (bigexome or v2)\n";
 	die;

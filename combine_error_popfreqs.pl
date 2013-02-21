@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# Description: Make a merged systematic error and highest MAF in outside populations file.
+# Description: Make a merged systematic error and highest altAF in outside populations file.
 #	Note that Y chromosome calls not available for 1KG or ESP
 #
 #
@@ -10,7 +10,7 @@
 use strict;
 use warnings;
 use Getopt::Long;
-
+use List::Util qw(sum);
 
 my ($inputfile, $outputfile, $capturearray);
 
@@ -36,11 +36,11 @@ my @errorinputs = ("$errorpath/snv.bigexome.vcf.gz", "$errorpath/indels.bigexome
 
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
-print OUT "#chr\tstart\tend\tref\talt\tPrctFreqinCMG\tPrctFreqinOutsidePop\n";
+print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
 foreach my $currchr (((1..22), "X", "Y")) {
-# foreach my $currchr ((("X", "Y"))) {
-	my $maxmafs_ref = readData($currchr);
-	my %chr_contents = %{$maxmafs_ref};
+# foreach my $currchr ((("1"))) {
+	my $maxaltAFs_ref = readData($currchr);
+	my %chr_contents = %{$maxaltAFs_ref};
 	foreach my $pos ( sort {$a<=>$b} keys %chr_contents ) { 
 		my $thispos_ref = $chr_contents{$pos};
  		while (my($lookup, $freq_ref) = each %{$thispos_ref}) {
@@ -49,11 +49,11 @@ foreach my $currchr (((1..22), "X", "Y")) {
 			if (defined ${$freq_ref}{'error'}) {
 				$errorfreq = ${$freq_ref}{'error'};
 			}
-			my $maxmaf = 0;
+			my $maxaltAF = 0;
 			if (defined ${$freq_ref}{'pop'}) {
-				$maxmaf = ${$freq_ref}{'pop'};
+				$maxaltAF = ${$freq_ref}{'pop'};
 			}
-			print OUT "$currchr\t$pos\t$pos\t$ref\t$alt\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxmaf*100)."\n";	
+			print OUT "$currchr\t$pos\t$pos\t$ref\t$alt\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxaltAF*100)."\n";	
 		}
 	}
 }
@@ -69,39 +69,60 @@ close OUT;
 sub readData {
 	my $currchr = $_[0];
 	
-	my %maxmafs;
+	my %maxaltAFs;
 	my $exit_value;
-
+	my $startbp = 1;
+	my $endbp = 300000000;
+	# note that ESP altAF is for MINOR allele
+	##INFO=<ID=altAF,Number=.,Type=String,Description="Minor Allele Frequency in percent in the order of EA,AA,All">
+	##INFO=<ID=EA_AC,Number=.,Type=String,Description="European American Allele Count in the order of AltAlleles,RefAllele">
+	##INFO=<ID=AA_AC,Number=.,Type=String,Description="African American Allele Count in the order of AltAlleles,RefAllele">
 	print "Reading in ESP data for chr $currchr\n";
-	my @espdata = `tabix $espSNPsfile $currchr:1-300000000`;
+	my @espdata = `tabix $espSNPsfile $currchr:$startbp-$endbp`;
 	$exit_value = $? >> 8;
 	if ($exit_value != 0) {
 		die "Error: exit value $exit_value\n@espdata\n";
 	}
 	foreach (@espdata) {
 		$_ =~ s/\s+$//;	
+		my @popaltAFs;
 		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
-		$vardata[2] =~ /MAF=((\.|\d|,)+);/;
-		my @popMAFs = split(",", $1);
-		my $maxpopmaf = 0;
-		foreach my $varmaf (@popMAFs) {
-			my $actualmaf = $varmaf/100;						# in ESP, allele freqs reported as percentages
-			if ($actualmaf > $maxpopmaf) {
-				$maxpopmaf = $actualmaf;
+		my @altalleles = split(",", $alt);									# in case there are multi-allelic SNPs
+		for (my $i=0; $i<=$#altalleles; $i++) {
+			{ 
+				$vardata[2] =~ /EA_AC=([\d,]+);/;
+				my @allelecounts = split(",", $1);
+				my $totalleles = sum @allelecounts;
+				push(@popaltAFs, $allelecounts[$i]/$totalleles);
 			}
-		}
+			{
+				$vardata[2] =~ /AA_AC=([\d,]+);/;
+				my @allelecounts = split(",", $1);
+				my $totalleles = sum @allelecounts;
+				push(@popaltAFs, $allelecounts[$i]/$totalleles);
+			}
 
-		my $lookup = "$ref.$alt";
-		if (!defined $maxmafs{$varpos}{$lookup}{'pop'}) {
-			$maxmafs{$varpos}{$lookup}{'pop'} = $maxpopmaf;
-		} elsif ($maxpopmaf > $maxmafs{$varpos}{$lookup}{'pop'}) {
-			$maxmafs{$varpos}{$lookup}{'pop'} = $maxpopmaf;
+			my $maxpopaltAF = 0;
+			foreach my $varaltAF (@popaltAFs) {
+				if ($varaltAF > $maxpopaltAF) {
+					$maxpopaltAF = $varaltAF;			}
+			}
+
+			my $lookup = "$ref.$altalleles[$i]";
+			if (!defined $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+				$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+				$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
+			} elsif ($maxpopaltAF > $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+				$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+				$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
+			}
 		}
 		# if ($varpos > 1000000) { last; }
 	}
 
 	print "Reading in 1KG data for chr $currchr\n";
-	my @thousandgenomedata = `tabix $thousandgenomesfile $currchr:1-1000000000`;
+	# note that 1KG Allele Frequency is for the ALTERNATE allele
+	my @thousandgenomedata = `tabix $thousandgenomesfile $currchr:$startbp-$endbp`;
 	$exit_value = $? >> 8;
 	if ($exit_value != 0) {
 		die "Error: exit value $exit_value\n@espdata\n";
@@ -111,33 +132,35 @@ sub readData {
 		$_ =~ s/\s+$//;
 		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
 		my @populations = qw(ASN AMR AFR EUR);
-		my @popMAFs;
+		my @popaltAFs;
 		foreach my $population (@populations) {
-			my $maffield = $population."_AF";
-			$vardata[2] =~ m/;$maffield=((\.|\d)+)/;
+			my $altAFfield = $population."_AF";
+			$vardata[2] =~ m/;$altAFfield=((\.|\d)+)/;
 			if (defined $1) {
-				push(@popMAFs, $1);
+				push(@popaltAFs, $1);
 			}
 		}
-		my $maxpopmaf = 0;
-		foreach my $varmaf (@popMAFs) {
-			if ($varmaf > $maxpopmaf) {
-				$maxpopmaf = $varmaf;
+		my $maxpopaltAF = 0;
+		foreach my $varaltAF (@popaltAFs) {
+			if ($varaltAF > $maxpopaltAF) {
+				$maxpopaltAF = $varaltAF;
 			}
 		}
 
 		my $lookup = "$ref.$alt";
-		if (!defined $maxmafs{$varpos}{$lookup}{'pop'}) {
-			$maxmafs{$varpos}{$lookup}{'pop'} = $maxpopmaf;
-		} elsif ($maxpopmaf > $maxmafs{$varpos}{$lookup}{'pop'}) {
-			$maxmafs{$varpos}{$lookup}{'pop'} = $maxpopmaf;
+		if (!defined $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
+		} elsif ($maxpopaltAF > $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
 		}
 		# if ($varpos > 1000000) { last; }
 	}
 
 	foreach my $file (@errorinputs) {
 		print "Reading in error data for chr $currchr\n";
-		my @errordata = `tabix $file $currchr:1-1000000000`;
+		my @errordata = `tabix $file $currchr:$startbp-$endbp`;
 		$exit_value = $? >> 8;
 		if ($exit_value != 0) {
 			die "Error: exit value $exit_value\n@espdata\n";
@@ -154,19 +177,19 @@ sub readData {
 			}
 
 			my $lookup = "$ref.$alt";
-			if (defined $maxmafs{$varpos}{$lookup}{'error'}) {
-				if ($errorfreq > $maxmafs{$varpos}{$lookup}{'error'}) {
-					$maxmafs{$varpos}{$lookup}{'error'} = $errorfreq;
+			if (defined $maxaltAFs{$varpos}{$lookup}{'error'}) {
+				if ($errorfreq > $maxaltAFs{$varpos}{$lookup}{'error'}) {
+					$maxaltAFs{$varpos}{$lookup}{'error'} = $errorfreq;
 				}
 			} else {
-				$maxmafs{$varpos}{$lookup}{'error'} = $errorfreq;
-				$maxmafs{$varpos}{$lookup}{'pop'} = 0;
+				$maxaltAFs{$varpos}{$lookup}{'error'} = $errorfreq;
+				$maxaltAFs{$varpos}{$lookup}{'pop'} = 0;
 			}
 			# if ($varpos > 1000000) { last; }
 		}
 	}
 	
-	return \%maxmafs;
+	return \%maxaltAFs;
 }
 
 
@@ -178,6 +201,6 @@ sub optionUsage {
 	print "perl $0 \n";
 	print "\t--in\tinput file\n";
 	print "\t--out\toutput file\n";
-	print "\t--capture\tcapture array used in sequencing (bigexome or v2)\n";
+	# print "\t--capture\tcapture array used in sequencing (bigexome or v2)\n";
 	die;
 }
