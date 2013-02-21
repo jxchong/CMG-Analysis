@@ -31,7 +31,7 @@ if (!defined $inputfile) {
 # }
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
-my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.tsv.vcf.gz";
+my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.tsv.gz";
 
 if (!-e $errorMAFfile) {
 	die "Cannot read from reference data: $errorMAFfile :$?\n";
