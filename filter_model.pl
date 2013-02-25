@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 #
 # Description: Look for mutations matching a particular model given an SSAnnotation file produced by SeattleSeq.
-#
+#	Note compound het mosaic model doesn't work with one parent lacking data
 #
 #
 # Created by Jessica Chong on 2012-10-15.
@@ -70,6 +70,9 @@ if (!defined $cmgfreqcutoff) {
 } 
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
+}
+if (defined $inheritmodel && $inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic') {
+	optionUsage("option --inheritmodel defined but not valid (should be compoundhet or compoundhetmosaic)\n");
 }
 
 if (!defined $excludeGVSfunction) {
@@ -347,6 +350,7 @@ while ( <FILE> ) {
 		if ($debugmode >= 2) { print STDOUT "variant at $pos passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
+		my %compoundhetcarriers;
 		my %qualityflags;
 		my $countcarriers = 0;
 		my $ishet_excluded = 0;
@@ -392,6 +396,13 @@ while ( <FILE> ) {
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
+				if ($inheritmodel eq 'compoundhetmosaic') {
+					if (!defined $compoundhetcarriers{$familyid}) {
+						$compoundhetcarriers{$familyid} = 'NA';
+					} elsif ($desiredgeno eq 'het' && ($relation eq 'father' || $relation eq 'mother')) {
+						$compoundhetcarriers{$familyid} = $relation;								# for compound het mosaic model, which parent should be a carrier?
+					}
+				}
 				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation (sex=$sex) $subjectid genotype ($genotype) $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
 			} 
 		}
@@ -429,7 +440,7 @@ while ( <FILE> ) {
 					}
 				}
 				
-				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'});
+				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'}, $inheritmodel, $compoundhetcarriers{$familyid});
 				if ($matchsubj eq 'reject') {
 					next;							# skip to evaluation of next family; doesn't match inheritance model
 				}
@@ -762,15 +773,31 @@ sub selectRefAlt {
 }
 
 sub determineMatchSubject {
-	my ($fatherismatch, $motherismatch, $inheritmodel) = @_;
+	my ($fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier) = @_;
 	my $matchsubj = 'reject';
 	
 	if ("$fatherismatch$motherismatch" !~ 'NA') {											# if both parents have genotypes
-		if (($fatherismatch+$motherismatch) == 1) {
-			if ($fatherismatch == 1) {
-				$matchsubj = 'father';
-			} elsif ($motherismatch == 1) {
-				$matchsubj = 'mother';
+		if (($fatherismatch+$motherismatch) == 1 || ($inheritmodel eq 'compoundhetmosaic' && ($fatherismatch+$motherismatch) == 2)) {
+			if ($inheritmodel eq 'compoundhetmosaic') {
+				if ($requiredcarrier eq 'father') {
+					if ($fatherismatch==1) {
+						$matchsubj = 'father';
+					} else {
+						$matchsubj = 'mother';
+					}
+				} elsif ($requiredcarrier eq 'mother') {
+					if ($motherismatch==1) {
+						$matchsubj = 'mother';
+					} else {
+						$matchsubj = 'father';
+					}
+				}
+			} else {
+				if ($fatherismatch == 1) {
+					$matchsubj = 'father';
+				} elsif ($motherismatch == 1) {
+					$matchsubj = 'mother';
+				}	
 			}
 		}
 	} elsif ($fatherismatch eq 'NA' && $motherismatch eq 'NA') {							# if both parents do not have a genotype
