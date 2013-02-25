@@ -68,10 +68,10 @@ if (!defined $mafcutoff) {
 if (!defined $cmgfreqcutoff) {
 	$cmgfreqcutoff = 0.2;
 } 
-if (defined $inheritmodel && $inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic') {
-	optionUsage("option --inheritmodel defined but not valid (should be compoundhet or compoundhetmosaic)\n");
-} else {
+if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
+} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic') {
+	optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic)\n");
 }
 
 if (!defined $excludeGVSfunction) {
@@ -88,7 +88,7 @@ my %allowedGATKfilters;
 if ($filters eq 'all' || $filters eq 'any') {
 	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
 } elsif ($filters eq 'default') {
-	%allowedGATKfilters = map {$_ => 1} qw(PASS);
+	%allowedGATKfilters = map {$_ => 1} qw(PASS SBFilter ABFilter);
 } else {
 	%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 } 
@@ -181,9 +181,9 @@ for (my $i=0; $i<=$#header; $i++) {
 	}
 	if ($columnname =~ /Freqin/i) {
 		$filehasfreqs = 1;
-		if ($columnname =~ /PrctAltFreqinCMG/i) {
+		if ($columnname =~ /FreqinCMG/i) {
 			$freqinCMGcol = $i;
-		} elsif ($columnname =~ /PrctAltFreqinOutsidePop/i) {
+		} elsif ($columnname =~ /FreqinOutsidePop/i) {
 			$freqinOutsidecol = $i;
 		}		
 	} elsif ($columnname =~ /polyPhen/i) {
@@ -198,6 +198,10 @@ for (my $i=0; $i<=$#header; $i++) {
 		$gatkfiltercol = $i;
 	}
 }
+
+##
+# add code to check for undefined columns
+##
 
 ###################### END parse the header #############################
 
