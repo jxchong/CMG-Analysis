@@ -389,7 +389,6 @@ while ( <FILE> ) {
 					$countcarriers++;
 				}
 				
-
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
@@ -403,47 +402,51 @@ while ( <FILE> ) {
 		my %matchingfamilies;
 		my %matchingfamilyunits;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
-			my %thisfamily = %{$thisfamily_ref};
+			my %thisfamily = %{$thisfamily_ref};											# storage for whether genotype matches expectations (either 1 or 0 for match or no match)
 			my $thisfamilymatch = 0;
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
 			my @rejectquality = (0,0);
-
-			if ($inheritmodel =~ 'compoundhet' && $familysize >= 3) {
-				if ( ($thisfamily{'father'}+$thisfamily{'mother'} == 1) || ($inheritmodel eq 'compoundhetmosaic' && $thisfamily{'father'}+$thisfamily{'mother'} == 2) ) {										# only one parent can be het
-					if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
-					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
-					foreach my $member (@familymembers) {
-						if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
-							$rejectquality[0] = 1;															# store whether someone failed the DP filter
-						} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
-							$rejectquality[1] = 1;															# store whether someone failed the GQ filter
+			my $nparentswithdata = (defined $thisfamily{'father'}) + (defined $thisfamily{'mother'});
+			
+			if ($inheritmodel =~ 'compoundhet') {		
+				if (!defined $thisfamily{'father'}) { 
+					$thisfamily{'father'} = 'NA';
+				}
+				if (!defined $thisfamily{'mother'}) {
+					$thisfamily{'mother'} = 'NA';
+				}
+	
+				if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
+				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
+				foreach my $member (@familymembers) {
+					if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
+						$rejectquality[0] = 1;															# store whether someone failed the DP filter
+					} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
+						$rejectquality[1] = 1;															# store whether someone failed the GQ filter
+					}
+					if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
+						$thisfamilymatch += 1;																# only counts matches in the kids
+					}
+				}
+				
+				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'});
+				if ($matchsubj eq 'reject') {
+					next;							# skip to evaluation of next family; doesn't match inheritance model
+				}
+				if ($thisfamilymatch == ($familysize-$nparentswithdata) || ($familysize-$nparentswithdata >= $maxmissesperfamily+$thisfamilymatch)) {					# if all affected children have at least one hit
+					$countfamiliesmatchmodel++;
+					if (($rejectquality[0]+$rejectquality[1]) == 0) {
+						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
+						$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
+						foreach my $member (@familymembers) {
+							$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
 						}
-						if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
-							$thisfamilymatch += 1;																# only counts matches in the kids
-						}
+					} else {
+						$countfamiliesrejectqual[0] += $rejectquality[0];
+						$countfamiliesrejectqual[1] += $rejectquality[1];
+						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit in $gene:$pos, the variant comes from $matchsubj but all members do NOT pass the GQ/DP check\n"; }
 					}
-					my $matchsubj;
-					if ($thisfamily{'father'} == 1) {
-						$matchsubj = 'father';
-					}
-					if ($thisfamily{'mother'} == 1) {
-						$matchsubj = 'mother';
-					}
-					if ($thisfamilymatch == ($familysize-2) || ($familysize-2-$thisfamilymatch <= $maxmissesperfamily)) {					# if all affected children have at least one hit
-						$countfamiliesmatchmodel++;
-						if (($rejectquality[0]+$rejectquality[1]) == 0) {
-							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
-							$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
-							foreach my $member (@familymembers) {
-								$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
-							}
-						} else {
-							$countfamiliesrejectqual[0] += $rejectquality[0];
-							$countfamiliesrejectqual[1] += $rejectquality[1];
-							if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit in $gene:$pos, the variant comes from $matchsubj but all members do NOT pass the GQ/DP check\n"; }
-						}
-					}
-				} 
+				}
 			} else {
 				my $countparentmatches = 0;
 				my $nparents = 0;
@@ -758,6 +761,38 @@ sub selectRefAlt {
 	return $ref, $alt;
 }
 
+sub determineMatchSubject {
+	my ($fatherismatch, $motherismatch, $inheritmodel) = @_;
+	my $matchsubj = 'reject';
+	
+	if ("$fatherismatch$motherismatch" !~ 'NA') {											# if both parents have genotypes
+		if (($fatherismatch+$motherismatch) == 1) {
+			if ($fatherismatch == 1) {
+				$matchsubj = 'father';
+			} elsif ($motherismatch == 1) {
+				$matchsubj = 'mother';
+			}
+		}
+	} elsif ($fatherismatch eq 'NA' && $motherismatch eq 'NA') {							# if both parents do not have a genotype
+		$matchsubj = 'either';
+	} elsif ($fatherismatch eq 'NA') {														# if father does not have genotype but mother does
+		if ($motherismatch == 1) {
+			$matchsubj = 'mother';
+		} elsif ($motherismatch == 0) {
+			$matchsubj = 'father';
+		}
+	} elsif ($motherismatch eq 'NA') {														# if mother does not have genotype but father does
+		if ($fatherismatch == 1) {
+			$matchsubj = 'father';
+		} elsif ($fatherismatch == 0) {
+			$matchsubj = 'mother';
+		}
+	}
+	
+	# need to think about this more but I think a compound het + mosaic model only matters if both parents were sequenced
+	# if one or neither parent was sequenced, can filter with other inheritance models that look identical
+	return $matchsubj;
+}
 
 
 
