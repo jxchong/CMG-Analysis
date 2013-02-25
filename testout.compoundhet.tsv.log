@@ -30,6 +30,6 @@ Total 18 variants from input examined after excluding 0:
 	N=0 are common variants
 	N=0 based on GATK filter
 	N=0 based on functional annotation
-Filtered out candidate hits from list of 12 variants matching inheritance model:
+Filtered out candidate hits from list of 18 variants matching inheritance model:
 	N=0 variants excluded based on DP; N=0 variants based on GQ
 	N=0 excluded because they were not unique within this dataset

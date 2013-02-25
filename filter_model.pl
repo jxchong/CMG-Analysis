@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 #
 # Description: Look for mutations matching a particular model given an SSAnnotation file produced by SeattleSeq.
-#	Note compound het mosaic model doesn't work with one parent lacking data
+#	Note compound het mosaic model doesn't work with parents lacking data
 #
 #
 # Created by Jessica Chong on 2012-10-15.
@@ -396,11 +396,17 @@ while ( <FILE> ) {
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
-				if ($inheritmodel eq 'compoundhetmosaic') {
+				if ($inheritmodel eq 'compoundhetmosaic') {											# for compound het mosaic model, which parent should be a carrier?
 					if (!defined $compoundhetcarriers{$familyid}) {
 						$compoundhetcarriers{$familyid} = 'NA';
 					} elsif ($desiredgeno eq 'het' && ($relation eq 'father' || $relation eq 'mother')) {
-						$compoundhetcarriers{$familyid} = $relation;								# for compound het mosaic model, which parent should be a carrier?
+						$compoundhetcarriers{$familyid} = $relation;								
+					} elsif ($desiredgeno eq 'ref' && ($relation eq 'father' || $relation eq 'mother')) {
+						if ($relation eq 'father') {
+							$compoundhetcarriers{$familyid} = 'mother';	
+						} else {
+							$compoundhetcarriers{$familyid} = 'father';	
+						}
 					}
 				}
 				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation (sex=$sex) $subjectid genotype ($genotype) $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
@@ -437,6 +443,7 @@ while ( <FILE> ) {
 					}
 					if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
 						$thisfamilymatch += 1;																# only counts matches in the kids
+						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
 					}
 				}
 				
@@ -444,7 +451,8 @@ while ( <FILE> ) {
 				if ($matchsubj eq 'reject') {
 					next;							# skip to evaluation of next family; doesn't match inheritance model
 				}
-				if ($thisfamilymatch == ($familysize-$nparentswithdata) || ($familysize-$nparentswithdata >= $maxmissesperfamily+$thisfamilymatch)) {					# if all affected children have at least one hit
+				if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilymatch genotype matches vs $familysize members and $nparentswithdata parents with genotype data\n"; }
+				if (($thisfamilymatch+$maxmissesperfamily) == ($familysize-$nparentswithdata)) {					# if all affected children have at least one hit
 					$countfamiliesmatchmodel++;
 					if (($rejectquality[0]+$rejectquality[1]) == 0) {
 						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
@@ -622,12 +630,17 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
 				}
 				my $matchsubj = ${$thisfamilydata_ref}{'source'};
-				$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
+				if ($matchsubj eq 'either') {
+					$familieswHitsinGene{$familyid}{'father'}++;											# hit comes from xxx parent
+					$familieswHitsinGene{$familyid}{'mother'}++;											# hit comes from xxx parent
+				} else {
+					$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
+				}
 				if ($debugmode >= 1) { print "a hit in family=$familyid comes from $matchsubj\n"; }	
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
-					if ($member ne 'mother' && $member ne 'father') {							# FIX!!!! (need to accomodate allowing for some kids with no hits)
+					if ($member ne 'mother' && $member ne 'father') {				
 						$familieswHitsinGene{$familyid}{$member} += ${$thisfamilydata_ref}{$member};								# add one to hits in children
 						if ($debugmode >= 2) { print "family=$familyid $member added ${$thisfamilydata_ref}{$member} hits making a total $familieswHitsinGene{$familyid}{$member} hits\n"; }			
 					}
@@ -662,6 +675,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				
 				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
 					# $counthitsinfamily += 2;
+					if ($debugmode >= 3) { print "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
 					if ($counthitsinfamily+$maxmissesperfamily+2 >= scalar(@familymembers)) {
 						$countfamiliesmatch++;
 					}
