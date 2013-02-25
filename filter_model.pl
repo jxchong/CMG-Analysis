@@ -182,9 +182,9 @@ for (my $i=0; $i<=$#header; $i++) {
 	}
 	if ($columnname =~ /Freqin/i) {
 		$filehasfreqs = 1;
-		if ($columnname =~ /PrctFreqinCMG/i) {
+		if ($columnname =~ /PrctAltFreqinCMG/i) {
 			$freqinCMGcol = $i;
-		} elsif ($columnname =~ /PrctFreqinOutsidePop/i) {
+		} elsif ($columnname =~ /PrctAltFreqinOutsidePop/i) {
 			$freqinOutsidecol = $i;
 		}		
 	} elsif ($columnname =~ /polyPhen/i) {
