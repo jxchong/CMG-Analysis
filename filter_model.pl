@@ -68,11 +68,10 @@ if (!defined $mafcutoff) {
 if (!defined $cmgfreqcutoff) {
 	$cmgfreqcutoff = 0.2;
 } 
-if (!defined $inheritmodel) {
-	$inheritmodel = 'NA';
-}
 if (defined $inheritmodel && $inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic') {
 	optionUsage("option --inheritmodel defined but not valid (should be compoundhet or compoundhetmosaic)\n");
+} else {
+	$inheritmodel = 'NA';
 }
 
 if (!defined $excludeGVSfunction) {
