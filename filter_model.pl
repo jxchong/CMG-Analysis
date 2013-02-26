@@ -151,8 +151,8 @@ my $headerline;
 
 if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of the file
 	while (<FILE>) {
-		next if ($_ !~ "#CHROM");
-		$headerline = <FILE>;
+		$headerline = $_;
+		next if ($headerline !~ "#CHROM");
 		$headerline =~ s/\s+$//;					# Remove line endings
 		my @header = split("\t", $headerline);
 		last;
@@ -160,6 +160,7 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 } else {
 	$headerline = <FILE>;
 }
+
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
 for (my $i=0; $i<=$#header; $i++) {
@@ -179,9 +180,9 @@ for (my $i=0; $i<=$#header; $i++) {
 	}
 	if ($columnname =~ /Freqin/i) {
 		$filehasfreqs = 1;
-		if ($columnname =~ /PrctAltFreqinCMG/i) {
+		if ($columnname =~ /FreqinCMG/i) {
 			$freqinCMGcol = $i;
-		} elsif ($columnname =~ /PrctAltFreqinOutsidePop/i) {
+		} elsif ($columnname =~ /FreqinOutsidePop/i) {
 			$freqinOutsidecol = $i;
 		}		
 	} elsif ($columnname =~ /polyPhen/i) {
@@ -195,6 +196,12 @@ for (my $i=0; $i<=$#header; $i++) {
 	} elsif ($columnname =~ /FILTER/i) {
 		$gatkfiltercol = $i;
 	}
+}
+
+
+# Check that user input corresponds to input data files
+if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
+	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
 }
 
 ###################### END parse the header #############################
@@ -235,110 +242,30 @@ while ( <FILE> ) {
 	my @line = split ("\t", $_);
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt);
-	my (@subjectgenotypes, @subjectquals, @subjectdps);
+	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
 	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons);
 	# my $indbsnp = 'NA';
 	# my $inUWexomes = 'NA';
 	# my $UWexomescovered = 'NA';
 	my $filterset;
 	
-
+	if ($line[1] < 874762) { next; }															## DEBUG
+	print "variant=@line; ";															## DEBUG
+	if ($line[1]> 887801) { exit; }															## DEBUG
+	
 	if ($inputfile =~ m/SeattleSeqAnnotation134/) {
-		parse_SeattleSeqAnnotation134_byline();
-		if ($inputfile =~ m/snps/) {
-			my $sampleallelestring = $line[5];
-			my @samplealleles = split("/", $sampleallelestring);
-			if (!defined $samplealleles[1]) {
-				$samplealleles[1] = 'N';
-				next;
-			}
-			$gene = $line[20];
-			$filterset = 'NA';
-			$functionimpact = $line[8];
-			# $indbsnp = $line[0];
-			$gerp = $line[$gerpcol];
-			$phastcons = $line[$phastconscol];
-			$polyphen = $line[$polyphencol];		
-			$vartype = 'SNP';
-			($ref, $alt) = selectRefAlt($line[3], $samplealleles[0], $samplealleles[1]);
-			@subjectgenotypes = split(",", $line[4]);
-		}
-		if ($inputfile =~ m/indels/) {
-			# ($vartype, $ref, $alt) = ('indel', $line[3], $line[4]);		# complicated parsing; not implemented
-			die "Have not implemented parsing of this file format yet\n";
-		}
+		# parse_SeattleSeqAnnotation134_byline();
 	} elsif ($inputfile =~ m/SSAnnotation/) {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons) = parse_SSAnnotation134_byline(\@dpcolumns, \@qualcolumns, @line);
-		@subjectgenotypes = @{$subjgeno_ref};
-		@subjectdps = @{$subjdps_ref};
-		@subjectquals = @{$subjquals_ref};
-	} 
-	elsif ($inputfile =~ m/\.vcf/) {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons) = parse_vcf_byline(\@dpcolumns, \@qualcolumns, @line);
-		@subjectgenotypes = @{$subjgeno_ref};
-		@subjectdps = @{$subjdps_ref};
-		@subjectquals = @{$subjquals_ref};
-		
-		sub parse_vcf_byline {
-			my ($dpcols_ref, $qualcols_ref, @line) = @_;
-			my (@subjectquals, @subjectdps);
-			my @dpcolumns = @{$dpcols_ref};
-			my @qualcolumns = @{$qualcols_ref};
-			my ($gene, $functionimpact, $gerp, $polyphen, $phastcons);
-			
-			my ($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], 'NA', $line[3], $line[4]);
-			my $filterset = $line[$gatkfiltercol];
-			my $gene = $line[7];
-			$functionimpact = $line[10];
-			$phastcons = $line[$phastconscol];
-			$gerp = $line[$gerpcol];
-			$polyphen = $line[$polyphencol];
-			# $inUWexomes = $line[16];
-			# $UWexomescovered = $line[17];
-			
-			my @databysubject = @line[@subjectcolumns];
-			my @subjectgenotypes = @line[@genotypecolumns];
-			if (@dpcolumns) {
-				@subjectdps = @line[@dpcolumns];
-			}
-			if (@qualcolumns) {
-				@subjectquals = @line[@qualcolumns];			
-			}
-			
-			return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons);
-		}
-		
-
-		
-		($chr, $pos, $ref, $alt) = ($line[0], $line[1], $line[3], $line[4]);
-		if ($inputfile =~ m/snps/i) {
-			$vartype = 'SNP';
-		} elsif ($inputfile =~ m/indels/i) {
-			$vartype = 'indel';
-		}
-		$filterset = $line[$gatkfiltercol];
-		@subjectgenotypes = @line[@genotypecolumns];
-		if (@dpcolumns) {
-			@subjectdps = @line[@dpcolumns];
-		}
-		if (@qualcolumns) {
-			@subjectquals = @line[@qualcolumns];			
-		}
-		
-		$gene = $line[7];
-		$functionimpact = $line[10];
-		$phastcons = $line[$phastconscol];
-		$gerp = $line[$gerpcol];
-		$polyphen = $line[$polyphencol];
-	} 
-	else {
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_SSAnnotation134_byline(\@genotypecolumns, \@dpcolumns, \@qualcolumns, @line);
+	} elsif ($inputfile =~ m/\.vcf/) {
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_vcf_byline(\@genotypecolumns, @line);
+	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
-	
-	# Check that user input corresponds to input data files
-	if (scalar(@subjectgenotypes) != scalar(@orderedsubjects)) {
-		die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@subjectgenotypes).") in the input data file ($inputfile)\n";
-	}
+	@subjectgenotypes = @{$subjgeno_ref};
+	@subjectdps = @{$subjdps_ref};
+	@subjectquals = @{$subjquals_ref};
+		
 	# Print current chromosome being processed (for user knowledge)
 	if ($workingchr ne $chr) {
 		print STDOUT "Reading variants on chr $chr\n";
@@ -415,7 +342,6 @@ while ( <FILE> ) {
 					$countcarriers++;
 				}
 				
-
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
@@ -543,6 +469,7 @@ while ( <FILE> ) {
 	# 	print STDOUT "stopping at chromosome $chr\n";
 	# 	last;
 	# }
+	# exit;												## DEBUG
 }
 close FILE;
 
@@ -770,6 +697,23 @@ sub checkGenoMatch {
 	return $ismatch;
 }
 
+sub vcfgeno2calls {
+	# doesn't handle multi-allelic sites yet
+	my ($genotype, $ref, $alt) = @_;
+	my $newgenotype;
+	
+	if ($genotype eq "./.") {
+		$newgenotype = 'N';
+	} elsif ($genotype eq "0/0") {
+		$newgenotype = $ref;
+	} elsif ($genotype eq '1/1') {
+		$newgenotype = $alt;
+	} else {
+		$newgenotype = 'het';
+	}
+	
+	return $newgenotype;
+}
 
 sub selectRefAlt {
 	my ($origref, $allele1, $allele2) = @_;
@@ -784,39 +728,16 @@ sub selectRefAlt {
 	return $ref, $alt;
 }
 
-
-
-# parse input files line by line
-sub parse_SSAnnotation134_byline {
-	my ($dpcols_ref, $qualcols_ref, @line) = @_;
-	my (@subjectquals, @subjectdps);
-	my @dpcolumns = @{$dpcols_ref};
-	my @qualcolumns = @{$qualcols_ref};
-	
-	my ($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
-	my $filterset = $line[$gatkfiltercol];
-	my $gene = $line[7];
-	my $functionimpact = $line[10];
-	my $phastcons = $line[$phastconscol];
-	my $gerp = $line[$gerpcol];
-	my $polyphen = $line[$polyphencol];
-	# $inUWexomes = $line[16];
-	# $UWexomescovered = $line[17];
-	
-	my @subjectgenotypes = @line[@genotypecolumns];
-	if (@dpcolumns) {
-		@subjectdps = @line[@dpcolumns];
+sub determinevartype {
+	my ($ref, $alt) = @_;
+	my $vartype = 'SNP';
+	if (length($ref)>1 || length($alt)>1) {
+		$vartype = 'indel';
 	}
-	if (@qualcolumns) {
-		@subjectquals = @line[@qualcolumns];			
-	}
-
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons);
+	return $vartype;
 }
 
-
-
-sub parseVCFfields {
+sub retrieveVCFfield {
 	my ($desiredfieldname, $vcfcolumn, $vcfcoltype) = @_;
 	my @columncontents;
 	if ($vcfcoltype eq 'genotype') {
@@ -830,13 +751,104 @@ sub parseVCFfields {
 	foreach my $column (@columncontents) {
 		if ($column =~ $searchstring) {
 			$column =~ s/$searchstring//;
-			last;
+			return $column;
 		}
 	}
-	return $column;
 }
 
+# parse input files line by line
+sub parse_SSAnnotation134_byline {
+	my ($subj_gtcolumns_ref, $dpcols_ref, $qualcols_ref, @line) = @_;
+	my (@subjectquals, @subjectdps);
+	my @genotypecolumns = @{$subj_gtcolumns_ref};
+	my @dpcolumns = @{$dpcols_ref};
+	my @qualcolumns = @{$qualcols_ref};
+	
+	my ($chr, $pos, $vartype, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
+	my $filterset = $line[$gatkfiltercol];
+	my $gene = $line[7];
+	my $functionimpact = $line[10];
+	# my $phastcons = $line[$phastconscol];
+	# my $gerp = $line[$gerpcol];
+	# my $polyphen = $line[$polyphencol];
+	# $inUWexomes = $line[16];
+	# $UWexomescovered = $line[17];
+	
+	my @subjectgenotypes = @line[@genotypecolumns];
+	if (@dpcolumns) {
+		@subjectdps = @line[@dpcolumns];
+	}
+	if (@qualcolumns) {
+		@subjectquals = @line[@qualcolumns];			
+	}
 
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact);
+}
+
+sub parse_vcf_byline {
+	my ($subj_columns_ref, @line) = @_;
+	my (@subjectquals, @subjectdps, @subjectgenotypes);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons);
+			
+	my ($chr, $pos, $ref, $alt) = ($line[0], $line[1], $line[3], $line[4]);
+	my $vartype = determinevartype($ref, $alt);
+	my $filterset = $line[6];
+	$gene = retrieveVCFfield('GL', $line[7], 'info');
+	$functionimpact = retrieveVCFfield('FG', $line[7], 'info');
+	$phastcons = retrieveVCFfield('CP', $line[7], 'info');
+	$gerp = retrieveVCFfield('CG', $line[7], 'info');
+	$polyphen = retrieveVCFfield('PP', $line[7], 'info');
+	# $inUWexomes = $line[16];
+	# $UWexomescovered = $line[17];
+	
+	my @format = split(":", $line[8]);
+	print "originalformat=$line[8]\n";
+	my ($gtcolnum, $dpcolnum, $gqcolnum);
+	for (my $i=0; $i<=$#format; $i++) {
+		if ($format[$i] eq 'GT') {
+			$gtcolnum = $i;
+		}
+		elsif ($format[$i] eq 'DP') {
+			$dpcolnum = $i;
+		}
+		elsif ($format[$i] eq 'GQ') {
+			$gqcolnum = $i;
+		}
+	}
+		
+	foreach my $subject (@line[@{$subj_columns_ref}]) {
+		my @subjectdata = split(":", $subject);
+		push(@subjectgenotypes, vcfgeno2calls($subjectdata[$gtcolnum], $ref, $alt));
+		push(@subjectdps, $subjectdata[$dpcolnum]);
+		push(@subjectquals, $subjectdata[$gqcolnum]);
+	}		
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact);
+}
+
+sub parse_SeattleSeqAnnotation134_byline {
+	# if ($inputfile =~ m/snps/) {
+	# 	my $sampleallelestring = $line[5];
+	# 	my @samplealleles = split("/", $sampleallelestring);
+	# 	if (!defined $samplealleles[1]) {
+	# 		$samplealleles[1] = 'N';
+	# 		next;
+	# 	}
+	# 	$gene = $line[20];
+	# 	$filterset = 'NA';
+	# 	$functionimpact = $line[8];
+	# 	# $indbsnp = $line[0];
+	# 	$gerp = $line[$gerpcol];
+	# 	$phastcons = $line[$phastconscol];
+	# 	$polyphen = $line[$polyphencol];		
+	# 	$vartype = 'SNP';
+	# 	($ref, $alt) = selectRefAlt($line[3], $samplealleles[0], $samplealleles[1]);
+	# 	@subjectgenotypes = split(",", $line[4]);
+	# }
+	# if ($inputfile =~ m/indels/) {
+	# 	# ($vartype, $ref, $alt) = ('indel', $line[3], $line[4]);		# complicated parsing; not implemented
+	# 	die "Have not implemented parsing of this file format yet\n";
+	# }
+}
 
 
 sub optionUsage {

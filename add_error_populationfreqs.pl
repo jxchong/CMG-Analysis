@@ -25,10 +25,7 @@ if (!defined $inputfile) {
 } elsif (!defined $outputfile) {
 	optionUsage("option --out not defined\n");
 } 
-# old code, very slow; reads from multiple files
-# elsif (!defined $capturearray) {
-	# optionUsage("option --capture not defined\n");
-# }
+
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
 my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.tsv.gz";
@@ -37,31 +34,47 @@ if (!-e $errorMAFfile) {
 	die "Cannot read from reference data: $errorMAFfile :$?\n";
 }
 
+my $firstline = `head -1 $inputfile`;
+$firstline =~ s/\s+$//;
+
+my $inputfiletype = determineInputType($firstline, $inputfile);
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
 
-if ($inputfile !~ m/SSAnnotation/) {
-	die "Input file ($inputfile) isn't an SSAnnotation file\n";
-}
-
 my %chr_contents = ();
+my $headerline;
 my $workingchr = "NA";
+
 open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
-my $headerline = <FILE>;
-$headerline =~ s/\s+$//;					# Remove line endings
+if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of the file
+	while (<FILE>) {
+		$headerline = $_;
+		$headerline =~ s/\s+$//;					# Remove line endings
+		if ($headerline !~ /^#CHROM/) {
+			print OUT "$headerline\n";
+			next;
+		} else {
+			last;
+		}
+	}
+} else {
+	$headerline = <FILE>;
+	$headerline =~ s/\s+$//;					# Remove line endings	
+}
+close FILE;
+
 my @header = split("\t", $headerline);
 print OUT join("\t", @header)."\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
+
+open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 while ( <FILE> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
+	next if ($_ =~ /^#/);
 	my @line = split ("\t", $_);
 	my ($chr, $pos, $vartype, $ref, $alt) = @line[0..4];
-
-	# if ($pos < 207015957) {
-	# 	next;
-	# }
-	# if ($pos > 207304900) {
-	# 	exit;
-	# }
+	if ($inputfiletype eq 'vcf') {
+		$vartype = determinevartype($ref, $alt);
+	}
 	
 	if ($chr ne $workingchr) {
 		my $maxmafs_ref = readData($chr);
@@ -106,9 +119,25 @@ close OUT;
 
 
 
+sub determinevartype {
+	my ($ref, $alt) = @_;
+	my $vartype = 'SNP';
+	if (length($ref)>1 || length($alt)>1) {
+		$vartype = 'indel';
+	}
+	return $vartype;
+}
 
-
-
+sub determineInputType {
+	my ($firstline, $filename) = @_;
+	my $inputtype = 'SSAnnotation';
+	if ($filename =~ '.vcf' || $firstline =~ 'VCFv4') {
+		$inputtype = 'vcf';
+	} elsif ($filename =~ 'SeattleSeqAnnotation' || $firstline =~ /^# inDBSNPOrNot/) {
+		$inputtype = 'SeattleSeqAnnotation';
+	}
+	return $inputtype;
+}
 
 sub readData {
 	my $currchr = $_[0];
@@ -118,6 +147,7 @@ sub readData {
 
 	print "Reading in error/MAF data for chr $currchr\n";
 	my @popdata = `tabix $errorMAFfile $currchr:1-300000000`;
+	# my @popdata = `tabix $errorMAFfile $currchr:1-300000`;					# DEBUG
 	$exit_value = $? >> 8;
 	if ($exit_value != 0) {
 		die "Error: exit value $exit_value\n@popdata\n";
