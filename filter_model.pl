@@ -162,6 +162,8 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 }
 
 $headerline =~ s/\s+$//;					# Remove line endings
+my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
+
 my @header = split("\t", $headerline);
 for (my $i=0; $i<=$#header; $i++) {
 	my $columnname = $header[$i];
@@ -249,15 +251,16 @@ while ( <FILE> ) {
 	# my $UWexomescovered = 'NA';
 	my $filterset;
 	
-	if ($line[1] < 874762) { next; }															## DEBUG
-	print "variant=@line; ";															## DEBUG
-	if ($line[1]> 887801) { exit; }															## DEBUG
+	# if ($line[1] < 874762) { next; }															## DEBUG
+	# print "variant=@line; ";															## DEBUG
+	# print "$line[0]:$line[1]\n";
+	# if ($line[1]> 887801) { exit; }															## DEBUG
 	
-	if ($inputfile =~ m/SeattleSeqAnnotation134/) {
+	if ($inputfiletype eq 'SeattleSeqAnnotation') {
 		# parse_SeattleSeqAnnotation134_byline();
-	} elsif ($inputfile =~ m/SSAnnotation/) {
+	} elsif ($inputfiletype eq 'SSAnnotation') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_SSAnnotation134_byline(\@genotypecolumns, \@dpcolumns, \@qualcolumns, @line);
-	} elsif ($inputfile =~ m/\.vcf/) {
+	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_vcf_byline(\@genotypecolumns, @line);
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -663,7 +666,7 @@ sub checkGenoMatch {
 	} elsif ($genotype eq 'N' && $isNhit eq 'nohit') {
 		$ismatch = 0;
 	} else {
-		if ($vartype eq 'SNP') {
+		# if ($vartype eq 'SNP') {
 			if ($genotype eq $ref) {
 				@alleles = ($ref, $ref);
 			} elsif ($genotype eq $alt) {
@@ -671,11 +674,12 @@ sub checkGenoMatch {
 			} else {
 				@alleles = ($ref, $alt);
 			}
-		} elsif ($vartype eq 'indel') {
+		# } els
+		if ($vartype eq 'indel' && $inputfiletype eq 'SSAnnotation') {
 			@alleles = split("/", $genotype);
 		}
 	
-		# print "$vartype\t$genotype\t$desiredgeno\t$ref\t$alt\t@alleles\n";				# DEBUG
+		# print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\talleles=@alleles\n";				# DEBUG
 	
 		if ($desiredgeno eq 'ref') {
 			if ($alleles[0] eq $ref && $alleles[1] eq $ref) {
@@ -735,6 +739,17 @@ sub determinevartype {
 		$vartype = 'indel';
 	}
 	return $vartype;
+}
+
+sub determineInputType {
+	my ($firstline, $filename) = @_;
+	my $inputtype = 'SSAnnotation';
+	if ($filename =~ '.vcf' || $firstline =~ 'VCFv4') {
+		$inputtype = 'vcf';
+	} elsif ($filename =~ 'SeattleSeqAnnotation' || $firstline =~ /^# inDBSNPOrNot/) {
+		$inputtype = 'SeattleSeqAnnotation';
+	}
+	return $inputtype;
 }
 
 sub retrieveVCFfield {
@@ -802,25 +817,35 @@ sub parse_vcf_byline {
 	# $UWexomescovered = $line[17];
 	
 	my @format = split(":", $line[8]);
-	print "originalformat=$line[8]\n";
-	my ($gtcolnum, $dpcolnum, $gqcolnum);
+	# print "originalformat=$line[8]\n";
+	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_rd, $pindel_ad);
 	for (my $i=0; $i<=$#format; $i++) {
 		if ($format[$i] eq 'GT') {
 			$gtcolnum = $i;
-		}
-		elsif ($format[$i] eq 'DP') {
+		} elsif ($format[$i] eq 'DP') {
 			$dpcolnum = $i;
-		}
-		elsif ($format[$i] eq 'GQ') {
+		} elsif ($format[$i] eq 'GQ') {
 			$gqcolnum = $i;
+		} elsif ($format[$i] eq 'RD') {
+			$pindel_rd = $i;
+		} elsif ($format[$i] eq 'AD') {
+			$pindel_ad = $i;
 		}
 	}
-		
+
 	foreach my $subject (@line[@{$subj_columns_ref}]) {
 		my @subjectdata = split(":", $subject);
 		push(@subjectgenotypes, vcfgeno2calls($subjectdata[$gtcolnum], $ref, $alt));
-		push(@subjectdps, $subjectdata[$dpcolnum]);
-		push(@subjectquals, $subjectdata[$gqcolnum]);
+		if (defined $dpcolnum) {
+			push(@subjectdps, $subjectdata[$dpcolnum]);
+		} else {
+			push(@subjectdps, ($subjectdata[$pindel_rd]+$subjectdata[$pindel_ad]));
+		}
+		if (defined $gqcolnum) {
+			push(@subjectquals, $subjectdata[$gqcolnum]);
+		} else {
+			push(@subjectquals, 99);
+		}
 	}		
 	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact);
 }
