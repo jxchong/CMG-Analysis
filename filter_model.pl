@@ -284,16 +284,6 @@ while ( <FILE> ) {
 	@subjectgenotypes = @{$subjgeno_ref};
 	@subjectdps = @{$subjdps_ref};
 	@subjectquals = @{$subjquals_ref};
-		
-		# $gene = $line[7];
-		# $functionimpact = $line[10];
-		# $phastcons = $line[$phastconscol];
-		# $gerp = $line[$gerpcol];
-		# $polyphen = $line[$polyphencol];
-	# } 
-	else {
-		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
-	} 
 	
 	# Check that user input corresponds to input data files
 	if (scalar(@subjectgenotypes) != scalar(@orderedsubjects)) {
