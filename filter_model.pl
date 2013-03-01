@@ -11,19 +11,8 @@ use strict;
 use warnings;
 use Getopt::Long;
 
-
-
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily);
-my $debugmode;
-my %genehits;
-my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
-
-my ($count_dpexclude, $count_qualexclude, $count_notunique, $count_examined_variants, $count_variants_excluded_function, $count_variants_excluded_gatk) = ((0) x 6);
-my $countvariantsmatchmodel = 0;
-my $counterrorvariants = 0;
-my $countcommonvariants = 0;
-my $countexcludedvariants = 0;
-
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
+my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
 	'out=s' => \$outputfile,
@@ -40,67 +29,16 @@ GetOptions(
 	'gq:f' => \$minqual,
 	'debug:i' => \$debugmode,
 );
+($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
+	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
+my %allowedGATKfilters = %{$allowedGATKfilters_ref};
+my %GVStoexclude = %{$GVStoexclude_ref};
 
-if (!defined $inputfile) {
-	optionUsage("option --in not defined\n");
-} elsif (!defined $outputfile) {
-	optionUsage("option --out not defined\n");
-} elsif (!defined $subjectdeffile) {
-	optionUsage("option --subjectreq not defined\n");
-} elsif (!defined $minhits) {
-	optionUsage("option --minhits not defined\n");
-} elsif (!defined $filters) {
-	optionUsage("option --GATKkeep not defined\n");
-} elsif (!defined $isNhit) {
-	optionUsage("option --N not defined\n");
-} elsif (!defined $maxmissesperfamily) {
-	optionUsage("option --maxmissesperfamily not defined\n");
-}
-if (!defined $mindp) {
-	$mindp = 10;
-}
-if (!defined $minqual) {
-	$minqual = 30;
-}
-if (!defined $mafcutoff) {
-	$mafcutoff = 0.01;
-}
-if (!defined $cmgfreqcutoff) {
-	$cmgfreqcutoff = 0.2;
-} 
-if (!defined $inheritmodel) {
-	$inheritmodel = 'NA';
-} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic' && $inheritmodel ne 'unique') {
-	optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic or unique)\n");
-}
-if (!defined $excludeGVSfunction) {
-	optionUsage("option --excludefunction not defined\n");
-}
-if (!defined $debugmode) {
-	$debugmode = 0;
-} else {
-	print STDOUT "Debug mode (#$debugmode) is on\n";
-}
-
-
-my %allowedGATKfilters;
-if ($filters eq 'all' || $filters eq 'any') {
-	%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
-} elsif ($filters eq 'default') {
-	%allowedGATKfilters = map {$_ => 1} qw(PASS SBFilter ABFilter);
-} else {
-	%allowedGATKfilters = map {$_ => 1} split(',', $filters);
-} 
-
-my %GVStoexclude;
-if ($excludeGVSfunction eq 'default') {
-	%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5 none);
-} elsif ($excludeGVSfunction eq 'none')  {
-	%GVStoexclude = map {$_ => 1} qw(NA);
-} else {
-	%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
-}
-
+my %genehits;
+my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
+my ($count_dpexclude, $count_qualexclude, $count_notunique, $count_examined_variants, $count_variants_excluded_function, $count_variants_excluded_gatk) = ((0) x 6);
+my ($countvariantsmatchmodel, $counterrorvariants, $countcommonvariants, $countexcludedvariants) = ((0) x 4);
 
 
 my $logfile = "$outputfile.log";
@@ -112,6 +50,7 @@ print LOG "subjectreq=$subjectdeffile\n";
 my %countuniquefamilies_hash;
 my @orderedsubjects;
 my %subjects;
+
 open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 ########## Order of subjects in this file must correspond to order of genotype columns
 while (<SUBJECTS>) {
@@ -145,11 +84,9 @@ print STDOUT "Reading in genotypes from $inputfile\n";
 
 
 ###################### BEGIN parse the header #############################
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns);
 my $filehasfreqs = 0;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
-
 if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of the file
 	while (<FILE>) {
 		$headerline = $_;
@@ -161,49 +98,14 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 } else {
 	$headerline = <FILE>;
 }
-
 $headerline =~ s/\s+$//;					# Remove line endings
-my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
-
 my @header = split("\t", $headerline);
-for (my $i=0; $i<=$#header; $i++) {
-	my $columnname = $header[$i];
-	if ($columnname =~ /Qual/i) {
-		push(@qualcolumns, $i);
-	} elsif ($columnname =~ /Depth/i && $columnname ne 'averageDepth') {
-		push(@dpcolumns, $i);
-	} elsif ($columnname =~ /Gtype/i) {
-		$columnname =~ s/Gtype//; 
-	}
-	if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
-		push(@keepcolumns, $i);
-	}
-	if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
-		push(@genotypecolumns, $i);
-	}
-	if ($columnname =~ /Freqin/i) {
-		$filehasfreqs = 1;
-		if ($columnname =~ /FreqinCMG/i) {
-			$freqinCMGcol = $i;
-		} elsif ($columnname =~ /FreqinOutsidePop/i) {
-			$freqinOutsidecol = $i;
-		}		
-	} elsif ($columnname =~ /polyPhen/i) {
-		$polyphencol = $i;
-	} elsif ($columnname =~ /GERP/i) {
-		$gerpcol = $i;
-	} elsif ($columnname =~ /PhastCons/i) {
-		$phastconscol = $i;
-	} elsif ($columnname =~ /filterFlagGATK/i) {
-		$gatkfiltercol = $i;
-	} elsif ($columnname =~ /FILTER/i) {
-		$gatkfiltercol = $i;
-	}
-}
-
-##
-# add code to check for undefined columns
-##
+my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref) = parseHeader(@header);
+my @genotypecolumns = @{$genotypecolumns_ref};
+my @qualcolumns = @{$qualcolumns_ref};
+my @dpcolumns = @{$dpcolumns_ref};
+my @keepcolumns = @{$keepcolumns_ref};
 
 
 # Check that user input corresponds to input data files
@@ -690,6 +592,116 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 	} else {
 		return 0;
 	}
+}
+
+
+sub checkandstoreOptions {
+	my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
+		$debugmode) = @_;
+	my (%allowedGATKfilters, %GVStoexclude);
+	
+	if (!defined $inputfile) {
+		optionUsage("option --in not defined\n");
+	} elsif (!defined $outputfile) {
+		optionUsage("option --out not defined\n");
+	} elsif (!defined $subjectdeffile) {
+		optionUsage("option --subjectreq not defined\n");
+	} elsif (!defined $minhits) {
+		optionUsage("option --minhits not defined\n");
+	} elsif (!defined $filters) {
+		optionUsage("option --GATKkeep not defined\n");
+	} elsif (!defined $isNhit) {
+		optionUsage("option --N not defined\n");
+	} elsif (!defined $maxmissesperfamily) {
+		optionUsage("option --maxmissesperfamily not defined\n");
+	}	
+	if (!defined $mindp) {
+		$mindp = 10;
+	}
+	if (!defined $minqual) {
+		$minqual = 30;
+	}
+	if (!defined $mafcutoff) {
+		$mafcutoff = 0.01;
+	}
+	if (!defined $cmgfreqcutoff) {
+		$cmgfreqcutoff = 0.2;
+	} 
+	if (!defined $inheritmodel) {
+		$inheritmodel = 'NA';
+	} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic' && $inheritmodel ne 'unique') {
+		optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic or unique)\n");
+	}
+	if (!defined $excludeGVSfunction) {
+		optionUsage("option --excludefunction not defined\n");
+	}
+	if (!defined $debugmode) {
+		$debugmode = 0;
+	} else {
+		print STDOUT "Debug mode (#$debugmode) is on\n";
+	}
+	if ($filters eq 'all' || $filters eq 'any') {
+		%allowedGATKfilters = map {$_ => 1} qw(QUALFilter QDFilter LowQual SBFilter PASS ABFilter LowQual HRunFilter SnpCluster QUALFilter);
+	} elsif ($filters eq 'default') {
+		%allowedGATKfilters = map {$_ => 1} qw(PASS SBFilter ABFilter);
+	} else {
+		%allowedGATKfilters = map {$_ => 1} split(',', $filters);
+	} 
+	if ($excludeGVSfunction eq 'default') {
+		%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5 none);
+	} elsif ($excludeGVSfunction eq 'none')  {
+		%GVStoexclude = map {$_ => 1} qw(NA);
+	} else {
+		%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
+	}
+	
+	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
+		$debugmode, \%allowedGATKfilters, \%GVStoexclude);
+}
+
+sub parseHeader {
+	##
+	# add code to check for undefined columns
+	##
+	my @header = @_;
+	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns);
+	for (my $i=0; $i<=$#header; $i++) {
+		my $columnname = $header[$i];
+		if ($columnname =~ /Qual/i) {
+			push(@qualcolumns, $i);
+		} elsif ($columnname =~ /Depth/i && $columnname ne 'averageDepth') {
+			push(@dpcolumns, $i);
+		} elsif ($columnname =~ /Gtype/i) {
+			$columnname =~ s/Gtype//; 
+		}
+		if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
+			push(@keepcolumns, $i);
+		}
+		if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
+			push(@genotypecolumns, $i);
+		}
+		if ($columnname =~ /Freqin/i) {
+			$filehasfreqs = 1;
+			if ($columnname =~ /FreqinCMG/i) {
+				$freqinCMGcol = $i;
+			} elsif ($columnname =~ /FreqinOutsidePop/i) {
+				$freqinOutsidecol = $i;
+			}		
+		} elsif ($columnname =~ /polyPhen/i) {
+			$polyphencol = $i;
+		} elsif ($columnname =~ /GERP/i) {
+			$gerpcol = $i;
+		} elsif ($columnname =~ /PhastCons/i) {
+			$phastconscol = $i;
+		} elsif ($columnname =~ /filterFlagGATK/i) {
+			$gatkfiltercol = $i;
+		} elsif ($columnname =~ /FILTER/i) {
+			$gatkfiltercol = $i;
+		}
+	}
+	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns);
 }
 
 sub passGATKfilters {
