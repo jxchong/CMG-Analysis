@@ -70,10 +70,9 @@ if (!defined $cmgfreqcutoff) {
 } 
 if (!defined $inheritmodel) {
 	$inheritmodel = 'NA';
-} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic') {
-	optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic)\n");
+} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic' && $inheritmodel ne 'unique') {
+	optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic or unique)\n");
 }
-
 if (!defined $excludeGVSfunction) {
 	optionUsage("option --excludefunction not defined\n");
 }
@@ -227,7 +226,7 @@ if ($filehasfreqs == 1) {
 if ($inputfiletype ne 'vcf') {
 	print OUT join("\t", @header[@keepcolumns])."\tFamilieswHits\n";
 } else {
-	print OUT "chr\tpos\ttype\tref\talt\tGATKflag\tgeneList\trsID\tfunctionGVS\taminoacids\tproteinPos\tcDNAPos\tPhastCons\tGERP\t";
+	print OUT "chr\tpos\ttype\tref\talt\tGATKflag\tgeneList\trsID\tfunctionGVS\taminoacids\tproteinPos\tcDNAPos\tPhastCons\tGERP\tPrctAltFreqinCMG\tPrctAltFreqOutside\t";
 	print OUT join("Gtype\t", @orderedsubjects)."Gtype\t";
 	print OUT join("DP\t", @orderedsubjects)."DP\t";
 	print OUT join("GQ\t", @orderedsubjects)."GQ\tFamilieswHits\n";
@@ -265,19 +264,22 @@ while ( <FILE> ) {
 	# my $UWexomescovered = 'NA';
 	my $filterset;
 	
-	# if ($line[1] < 874762) { next; }															## DEBUG
-	# print "variant=@line\n";															## DEBUG
-	# print "$line[0]:$line[1]\n";
-	# if ($line[1]> 906272) { exit; }															## DEBUG
-	
 	if ($inputfiletype eq 'SeattleSeqAnnotation') {
 		# parse_SeattleSeqAnnotation134_byline();
 	} elsif ($inputfiletype eq 'SSAnnotation') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_SSAnnotation134_byline(\@genotypecolumns, \@dpcolumns, \@qualcolumns, @line);
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos) = parse_vcf_byline(\@genotypecolumns, @line);
-		# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";
-		# exit
+		if ($debugmode >= 3) {
+			if ($chr < 8) {
+				next;
+			} elsif ($chr == 9) {
+				last;
+			}
+			# if ($chr == 6 && $pos == 31238942 ) {
+				# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";
+			# }
+		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
@@ -311,20 +313,23 @@ while ( <FILE> ) {
 		$iscommon = 1;
 		$countcommonvariants++;
 		if ($debugmode >= 2) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
-	}				
-	if (shouldfunctionFilter(\%GVStoexclude, $functionimpact) == 1) {
+	}
+	my $resultfunctionfilter = shouldfunctionFilter(\%GVStoexclude, $functionimpact);
+	my $resultGATKfilter = passGATKfilters(\%allowedGATKfilters, $filterset);
+	if ($resultfunctionfilter == 1) {
 		$count_variants_excluded_function++;
 		if ($debugmode >= 2) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
 	}
-	if (passGATKfilters(\%allowedGATKfilters, $filterset) == 0) {
+	if ($resultGATKfilter == 0) {
 		$count_variants_excluded_gatk++;
 		if ($debugmode >= 2) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
 	}
 
-	if ($iserror==0 && $iscommon==0 && shouldfunctionFilter(\%GVStoexclude, $functionimpact)==0 && ($filterset eq 'NA' || passGATKfilters(\%allowedGATKfilters, $filterset))) {
+	if ($iserror==0 && $iscommon==0 && $resultfunctionfilter==0 && ($filterset eq 'NA' || $resultGATKfilter==1)) {
 		if ($debugmode >= 2) { print STDOUT "variant at $pos passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
+		my %typeofgeno_all;
 		my %compoundhetcarriers;
 		my %qualityflags;
 		my $countcarriers = 0;
@@ -369,6 +374,7 @@ while ( <FILE> ) {
 				}
 				
 				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
+				$typeofgeno_all{$familyid}{$relation} = determineGenoType($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
 				if ($inheritmodel eq 'compoundhetmosaic') {											# for compound het mosaic model, which parent should be a carrier?
@@ -422,7 +428,7 @@ while ( <FILE> ) {
 					}
 				}
 				
-				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'}, $inheritmodel, $compoundhetcarriers{$familyid});
+				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'}, $inheritmodel, $compoundhetcarriers{$familyid}, $typeofgeno_all{$familyid}{'father'}, $typeofgeno_all{$familyid}{'mother'});
 				if ($matchsubj eq 'reject') {
 					next;							# skip to evaluation of next family; doesn't match inheritance model
 				}
@@ -496,8 +502,7 @@ while ( <FILE> ) {
 			if ($inputfiletype ne 'vcf') {
 				$data = join("\t", @line);
 			} else {
-				# print "$chr\t$pos\t$vartype\t$ref\t$alt\t$filterset\n";
-				$data = "$chr\t$pos\t$vartype\t$ref\t$alt\t$filterset\t$gene\t$rsid\t$functionimpact\t$aminoacids\t$proteinpos\t$cdnapos\t$phastcons\t$gerp\t".join("\t", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr\t$pos\t$vartype\t$ref\t$alt\t$filterset\t$gene\t$rsid\t$functionimpact\t$aminoacids\t$proteinpos\t$cdnapos\t$phastcons\t$gerp\t$freqinCMG\t$freqinOutside\t".join("\t", (@subjectgenotypes, @subjectdps, @subjectquals));	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -699,14 +704,17 @@ sub passGATKfilters {
 	return $keep;
 }
 
-
 sub shouldfunctionFilter {
 	my ($GVStoexclude_ref, $functionimpact) = @_;
 	my $score = 0;
-	if (defined ${$GVStoexclude_ref}{$functionimpact}) {
-		$score += 1;
+	my @filters = split(",", $functionimpact);
+	foreach my $eachfilter (@filters) {
+		if (defined ${$GVStoexclude_ref}{$eachfilter}) {
+			$score += 1;
+		}
 	}
-	if ($score > 0) {
+
+	if ($score == scalar(@filters)) {
 		return 1;
 	} else {
 		return 0;
@@ -714,8 +722,7 @@ sub shouldfunctionFilter {
 }
 
 sub checkGenoMatch {
-	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr) = @_;
-		
+	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr) = @_;		
 	my @alleles;
 	my $ismatch = 0;
 	
@@ -724,7 +731,9 @@ sub checkGenoMatch {
 	} elsif ($genotype eq 'N' && $isNhit eq 'nohit') {
 		$ismatch = 0;
 	} else {
-		# if ($vartype eq 'SNP') {
+		my %altalleles = map {$_ => 1} split(",", $alt);	
+
+		if ($inputfiletype eq 'SSAnnotation') {
 			if ($genotype eq $ref) {
 				@alleles = ($ref, $ref);
 			} elsif ($genotype eq $alt) {
@@ -732,51 +741,82 @@ sub checkGenoMatch {
 			} else {
 				@alleles = ($ref, $alt);
 			}
-		# } els
-		if ($vartype eq 'indel' && $inputfiletype eq 'SSAnnotation') {
+			if ($vartype eq 'indel') {
+				@alleles = split("/", $genotype);
+			}
+		} else {
 			@alleles = split("/", $genotype);
 		}
-	
-		# print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\talleles=@alleles\n";				# DEBUG
 	
 		if ($desiredgeno eq 'ref') {
 			if ($alleles[0] eq $ref && $alleles[1] eq $ref) {
 				$ismatch = 1;
 			}
 		} elsif ($desiredgeno eq 'alt') {
-			if ($alleles[0] eq $alt && $alleles[1] eq $alt) {
+			if (defined $altalleles{$alleles[0]} && defined $altalleles{$alleles[1]}) {
 				$ismatch = 1;
 			}
 		} elsif ($desiredgeno eq 'het') {
-			if ($alleles[0] eq $ref && $alleles[1] eq $alt) {
+			if (($alleles[0] eq $ref || $alleles[1] eq $ref) && (defined $altalleles{$alleles[1]} || defined $altalleles{$alleles[0]})) {
 				$ismatch = 1;
 			}
-			if ($sex == 1 && ($chr eq "X" || $chr eq "Y") && ($alleles[0] eq $alt && $alleles[1] eq $alt)) {
+			if ($sex == 1 && ($chr eq "X" || $chr eq "Y") && (defined $altalleles{$alleles[0]} && defined $altalleles{$alleles[1]})) {
 				$ismatch = 1;
 			}
 		} 
 	}
+	# print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
 	return $ismatch;
 }
 
-sub vcfgeno2calls {
-	# doesn't handle multi-allelic sites yet
-	my ($genotype, $ref, $alt) = @_;
-	my $newgenotype;
-	
-	if ($genotype eq "./.") {
-		$newgenotype = 'N';
-	} elsif ($genotype eq "0/0") {
-		$newgenotype = $ref;
-	} elsif ($genotype eq '1/1') {
-		$newgenotype = $alt;
+sub determineGenoType {
+	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr) = @_;		
+	my @alleles;
+	my $typeofgeno;
+	my %altalleles = map {$_ => 1} split(",", $alt);	
+	if ($inputfiletype eq 'SSAnnotation') {
+		if ($genotype eq $ref) {
+			@alleles = ($ref, $ref);
+		} elsif ($genotype eq $alt) {
+			@alleles = ($alt, $alt);
+		} else {
+			@alleles = ($ref, $alt);
+		}
+		if ($vartype eq 'indel') {
+			@alleles = split("/", $genotype);
+		}
 	} else {
-		$newgenotype = "$ref/$alt";
+		@alleles = split("/", $genotype);
 	}
 	
+	if ($genotype eq 'N') {
+		$typeofgeno = 'N';
+	} elsif ($alleles[0] eq $ref && $alleles[1] eq $ref) {
+		$typeofgeno = 'homref';
+	} elsif (defined $altalleles{$alleles[0]} && defined $altalleles{$alleles[1]}) {
+		$typeofgeno = 'homalt';
+	} elsif (($alleles[0] eq $ref || $alleles[1] eq $ref) && (defined $altalleles{$alleles[1]} || defined $altalleles{$alleles[0]})) {
+		$typeofgeno = 'het';
+	}
+	return $typeofgeno;
+}
+
+
+sub vcfgeno2calls {
+	my ($genotype, $ref, $alt) = @_;
+	my $newgenotype;
+	my @allalleles = ($ref, split(",", $alt));
+	if ($genotype eq '.' || $genotype eq './.') {
+		$newgenotype = 'N';
+	} else {
+		my @oldgeno = split("/", $genotype);
+		$newgenotype = "$allalleles[$oldgeno[0]]/$allalleles[$oldgeno[1]]";
+	}
 	return $newgenotype;
 }
+
 sub selectRefAlt {
+	### not compatible with multi-allelic SNPs
 	my ($origref, $allele1, $allele2) = @_;
 	my ($ref, $alt);
 	if ($origref eq $allele1) {
@@ -790,7 +830,7 @@ sub selectRefAlt {
 }
 
 sub determineMatchSubject {
-	my ($fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier) = @_;
+	my ($fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno) = @_;
 	my $matchsubj = 'reject';
 	
 	if ("$fatherismatch$motherismatch" !~ 'NA') {											# if both parents have genotypes
@@ -809,12 +849,18 @@ sub determineMatchSubject {
 						$matchsubj = 'father';
 					}
 				}
-			} else {
-				if ($fatherismatch == 1) {
-					$matchsubj = 'father';
-				} elsif ($motherismatch == 1) {
-					$matchsubj = 'mother';
-				}	
+			} elsif ($inheritmodel eq 'compoundhet') {
+				if ($debugmode >=3) { print "father is $fathertypeofgeno, mother is $mothertypeofgeno: "; }
+				if (($fathertypeofgeno eq 'het' || $fathertypeofgeno eq 'homalt') xor ($mothertypeofgeno eq 'het' || $mothertypeofgeno eq 'homalt')) {
+					if ($debugmode >=3) { print "pass\n"; }
+					if ($fatherismatch == 1) {
+						$matchsubj = 'father';
+					} elsif ($motherismatch == 1) {
+						$matchsubj = 'mother';
+					}	
+				} else {
+					if ($debugmode >=3) { print "fail\n" }
+				}
 			}
 		}
 	} elsif ($fatherismatch eq 'NA' && $motherismatch eq 'NA') {							# if both parents do not have a genotype
@@ -840,7 +886,8 @@ sub determineMatchSubject {
 sub determinevartype {
 	my ($ref, $alt) = @_;
 	my $vartype = 'SNP';
-	if (length($ref)>1 || length($alt)>1) {
+	my @altalleles = split(",", $alt);
+	if (length($ref)>1 || length($altalleles[0])>1) {
 		$vartype = 'indel';
 	}
 	return $vartype;

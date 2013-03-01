@@ -1,15 +1,15 @@
 input=TESTDATA.SSAnnotation.tsv
-output=testout.compoundhet.tsv
-subjectreq=compoundhet.subjectreq
-1	40020	0	0	2	child	het
-2	40022	0	0	2	child	het
-3	40023	0	0	2	child	het
-4	40024	0	0	2	child	het
-5	40026	0	0	2	child	het
-6	40028	40029	40030	2	child	het
+output=testout.homozygrec.tsv
+subjectreq=homozygrec.subjectreq
+1	40020	0	0	2	child	alt
+2	40022	0	0	2	child	alt
+3	40023	0	0	2	child	alt
+4	40024	0	0	2	child	alt
+5	40026	0	0	2	child	alt
+6	40028	40029	40030	2	child	alt
 6	40029	0	0	1	father	het
 6	40030	0	0	2	mother	het
-7	40031	0	0	2	child	het
+7	40031	0	0	2	child	alt
 
 File contains frequencies in outside populations and frequency observed in other CMG subjects
 Requiring hits in gene in at least 1 subjects/families
@@ -20,16 +20,16 @@ Excluding all variants with annotations: intergenic
 Only allow variants with GATK filter: PASS LowQual SBFilter SnpCluster QUALFilter QDFilter ABFilter HRunFilter
 Excluding variants with MAF>.01 in ESP and/or 1000 Genomes
 Excluding variants with frequency>=.2 in CMG subjects (likely systematic error)
-Special analysis? compoundhet
+Special analysis? NA
 
 Results summary:
-In 2 gene(s), identified 4 variants
+In 1 gene(s), identified 2 variants
 Total 12 variants in input
 Total 12 variants from input examined after excluding 0:
 	N=0 are systematic errors
 	N=0 are common variants
 	N=0 based on GATK filter
 	N=0 based on functional annotation
-Filtered out candidate hits from list of 8 variants matching inheritance model:
+Filtered out candidate hits from list of 2 variants matching inheritance model:
 	N=0 variants excluded based on DP; N=0 variants based on GQ
 	N=0 excluded because they were not unique within this dataset
