@@ -11,7 +11,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -31,64 +31,31 @@ GetOptions(
 );
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
 	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
-	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
 my %allowedGATKfilters = %{$allowedGATKfilters_ref};
 my %GVStoexclude = %{$GVStoexclude_ref};
 
-my %genehits;
-my ($countinputvariants, $printparams, $workingchr) = (0, 0, 0);
-my ($count_dpexclude, $count_qualexclude, $count_notunique, $count_examined_variants, $count_variants_excluded_function, $count_variants_excluded_gatk) = ((0) x 6);
-my ($countvariantsmatchmodel, $counterrorvariants, $countcommonvariants, $countexcludedvariants) = ((0) x 4);
+open (my $log_filehandle, ">", $logfile) or die "Cannot write to $logfile: $!.\n";
+print $log_filehandle "input=$inputfile\noutput=$outputfile\nsubjectreq=$subjectdeffile\n";
+printParamstoLog($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minqual, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
 
+###################### READ PEDIGREE/SUBJECT DATA ###################### 
+my (%countuniquefamilies_hash, @orderedsubjects, %subjects, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
 
-my $logfile = "$outputfile.log";
-open (LOG, ">$logfile") or die "Cannot write to $logfile: $!.\n";
-print LOG "input=$inputfile\n";
-print LOG "output=$outputfile\n";
-print LOG "subjectreq=$subjectdeffile\n";
-
-my %countuniquefamilies_hash;
-my @orderedsubjects;
-my %subjects;
-
-open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
-########## Order of subjects in this file must correspond to order of genotype columns
-while (<SUBJECTS>) {
-	$_ =~ s/\s+$//;					# Remove line endings
-	print LOG "$_\n";
-	my ($familyid, $subjectid, $father, $mother, $sex, $relation, $desiredgeno) = split("\t", $_);
-	$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
-	push(@orderedsubjects, $subjectid);
-	if ($subjectid !~ '#') {
-		push(@{$countuniquefamilies_hash{$familyid}}, $relation);
-	} else {
-		print LOG "$subjectid is being skipped in this analysis\n";
-	}
-}
-close SUBJECTS;
-my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
-print LOG "\n";
-
-
-
-############## BEGIN READING INPUT and WRITING LOG FILE ############## 
-
-
-open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
+###################### BEGIN READING INPUT and HEADER ###################### 
+open (my $output_filehandle, ">", $outputfile) or die "Cannot write to $outputfile: $!.\n";
+my $input_filehandle;
 if ($inputfile =~ /\.gz$/) {
-	open (FILE, "zcat $inputfile |") or die "Cannot read $inputfile file: $!.\n";
+	open ($input_filehandle, "zcat $inputfile |") or die "Cannot read $inputfile file: $!.\n";
 } else {
-	open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
+	open ($input_filehandle, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 }
 print STDOUT "Reading in genotypes from $inputfile\n";
 
-
-###################### BEGIN parse the header #############################
-my $filehasfreqs = 0;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
 if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of the file
-	while (<FILE>) {
+	while (<$input_filehandle>) {
 		$headerline = $_;
 		next if ($headerline !~ "#CHROM");
 		$headerline =~ s/\s+$//;					# Remove line endings
@@ -96,7 +63,7 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 		last;
 	}
 } else {
-	$headerline = <FILE>;
+	$headerline = <$input_filehandle>;
 }
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
@@ -107,54 +74,29 @@ my @qualcolumns = @{$qualcolumns_ref};
 my @dpcolumns = @{$dpcolumns_ref};
 my @keepcolumns = @{$keepcolumns_ref};
 
-
 # Check that user input corresponds to input data files
 if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
 }
 
-###################### END parse the header #############################
-
-if ($filehasfreqs == 1) {
-	print LOG "File contains frequencies in outside populations and frequency observed in other CMG subjects\n";
-} else {
-	print STDERR "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
-	print LOG "!!!!!! File doesn't contain frequencies in outside populations and frequency observed in other CMG subjects\n";
-	print LOG "Run: perl ~/bin/add_error_populationfreqs.pl --in $inputfile --out <outputfile> --capture <capture array for systematic error filtering>\n";
-	die;
-}
-
-###################### START print output header #############################
+###################### PRINT HEADER FOR OUTPUT #############################
 if ($inputfiletype ne 'vcf') {
-	print OUT join("\t", @header[@keepcolumns])."\tFamilieswHits\n";
+	print $output_filehandle join("\t", @header[@keepcolumns])."\tFamilieswHits\n";
 } else {
-	print OUT "chr\tpos\ttype\tref\talt\tGATKflag\tgeneList\trsID\tfunctionGVS\taminoacids\tproteinPos\tcDNAPos\tPhastCons\tGERP\tPrctAltFreqinCMG\tPrctAltFreqOutside\t";
-	print OUT join("Gtype\t", @orderedsubjects)."Gtype\t";
-	print OUT join("DP\t", @orderedsubjects)."DP\t";
-	print OUT join("GQ\t", @orderedsubjects)."GQ\tFamilieswHits\n";
+	print $output_filehandle "chr\tpos\ttype\tref\talt\tGATKflag\tgeneList\trsID\tfunctionGVS\taminoacids\tproteinPos\tcDNAPos\tPhastCons\tGERP\tPrctAltFreqinCMG\tPrctAltFreqOutside\t";
+	print $output_filehandle join("Gtype\t", @orderedsubjects)."Gtype\t";
+	print $output_filehandle join("DP\t", @orderedsubjects)."DP\t";
+	print $output_filehandle join("GQ\t", @orderedsubjects)."GQ\tFamilieswHits\n";
 }
-###################### END print output header #############################
 
-while ( <FILE> ) {
+
+###################### start checking variants in input #############################
+my ($countinputvariants, $printparams, $workingchr, $count_dpexclude, $count_qualexclude, $count_notunique, $count_examined_variants, $count_variants_excluded_function, $count_variants_excluded_gatk) = ((0) x 9);
+my ($countvariantsmatchmodel, $counterrorvariants, $countcommonvariants, $countexcludedvariants) = ((0) x 4);
+my %genehits;
+while ( <$input_filehandle> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	$countinputvariants++;
-	
-	if ($printparams == 0) {
-		print LOG "Requiring hits in gene in at least $minhits subjects/families\n";
-		print LOG "Allowing up to $maxmissesperfamily subjects per family to not have the correct genotype\n";
-		if (@dpcolumns && @qualcolumns) {
-			print LOG "Genotypes require at least $mindp depth and at least $minqual qual, otherwise genotype set to be missing\n";
-		} else {
-			print LOG "Per-sample depth and quality information not available\n";
-		}
-		print LOG "Missing genotypes/no calls are counted as: $isNhit\n";
-		print LOG "Excluding all variants with annotations: ".join(" ", keys %GVStoexclude)."\n";
-		print LOG "Only allow variants with GATK filter: ".join(" ", keys %allowedGATKfilters)."\n";
-		print LOG "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
-		print LOG "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
-		print LOG "Special analysis? $inheritmodel\n";
-		$printparams = 1;
-	}
 	
 	my @line = split ("\t", $_);
 	my $countmatches = 0;
@@ -189,18 +131,12 @@ while ( <FILE> ) {
 	@subjectdps = @{$subjdps_ref};
 	@subjectquals = @{$subjquals_ref};
 	
-	# Check that user input corresponds to input data files
-	if (scalar(@subjectgenotypes) != scalar(@orderedsubjects)) {
-		die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@subjectgenotypes).") in the input data file ($inputfile)\n";
-	}
 	# Print current chromosome being processed (for user knowledge)
 	if ($workingchr ne $chr) {
 		print STDOUT "Reading variants on chr $chr\n";
 		$workingchr = $chr;
 	}
-	
-	# if ($chr ne '1') { exit; }																	## DEBUG
-	
+		
 	if ($debugmode >= 2) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
 	
 	my ($iserror, $iscommon) = (0,0);
@@ -429,7 +365,7 @@ while ( <FILE> ) {
 	# }
 	# exit;												## DEBUG
 }
-close FILE;
+close $input_filehandle;
 
 
 
@@ -465,11 +401,11 @@ while (my ($gene, $results_ref) = each %genehits) {
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
 			my @hitvarinfoarray = split("\t", $hitvarinfo);
-	  		# print OUT "$hitvarinfo\t".join(";", @familyids)."\n";
+	  		# print $output_filehandle "$hitvarinfo\t".join(";", @familyids)."\n";
 			if ($inputfiletype ne 'vcf') {
-				print OUT join("\t", @hitvarinfoarray[@keepcolumns])."\t".join(";", @familyids)."\n";
+				print $output_filehandle join("\t", @hitvarinfoarray[@keepcolumns])."\t".join(";", @familyids)."\n";
 			} else {
-				print OUT join("\t", @hitvarinfoarray)."\t".join(";", @familyids)."\n";
+				print $output_filehandle join("\t", @hitvarinfoarray)."\t".join(";", @familyids)."\n";
 			}
 	  	}
 	} else {
@@ -478,20 +414,20 @@ while (my ($gene, $results_ref) = each %genehits) {
 	}
 }
 
-print LOG "\nResults summary:\n";
-print LOG "In $countgeneswhits gene(s), identified $countoutputvariants variants\n";
-print LOG "Total $countinputvariants variants in input\n";
-print LOG "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
-print LOG "\tN=$counterrorvariants are systematic errors\n";
-print LOG "\tN=$countcommonvariants are common variants\n";
-print LOG "\tN=$count_variants_excluded_gatk based on GATK filter\n";
-print LOG "\tN=$count_variants_excluded_function based on functional annotation\n";
+print $log_filehandle "\nResults summary:\n";
+print $log_filehandle "In $countgeneswhits gene(s), identified $countoutputvariants variants\n";
+print $log_filehandle "Total $countinputvariants variants in input\n";
+print $log_filehandle "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
+print $log_filehandle "\tN=$counterrorvariants are systematic errors\n";
+print $log_filehandle "\tN=$countcommonvariants are common variants\n";
+print $log_filehandle "\tN=$count_variants_excluded_gatk based on GATK filter\n";
+print $log_filehandle "\tN=$count_variants_excluded_function based on functional annotation\n";
 
 
-print LOG "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
-print LOG "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
-print LOG "\tN=$count_notunique excluded because they were not unique within this dataset\n";
-close LOG;
+print $log_filehandle "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
+print $log_filehandle "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
+print $log_filehandle "\tN=$count_notunique excluded because they were not unique within this dataset\n";
+close $log_filehandle;
  
 
 
@@ -656,9 +592,53 @@ sub checkandstoreOptions {
 		%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
 	}
 	
+	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
 		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
-		$debugmode, \%allowedGATKfilters, \%GVStoexclude);
+		$debugmode, \%allowedGATKfilters, \%GVStoexclude, $logfile);
+}
+
+sub printParamstoLog {
+	my ($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minqual, $isNhit, $gvstoexclude_string, $allowedgatk_string, $mafcutoff, $cmgfreqcutoff, $inheritmodel) = @_;
+
+	print $log_filehandle "Requiring hits in gene in at least $minhits subjects/families\n";
+	print $log_filehandle "Allowing up to $maxmissesperfamily subjects per family to not have the correct genotype\n";
+	# if (@dpcolumns && @qualcolumns) {
+		print $log_filehandle "Genotypes require at least $mindp depth and at least $minqual qual, otherwise genotype set to be missing\n";
+	# } else {
+		# print $log_filehandle "Per-sample depth and quality information not available\n";
+	# }
+	print $log_filehandle "Missing genotypes/no calls are counted as: $isNhit\n";
+	print $log_filehandle "Excluding all variants with annotations: $gvstoexclude_string\n";
+	print $log_filehandle "Only allow variants with GATK filter: $allowedgatk_string\n";
+	print $log_filehandle "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
+	print $log_filehandle "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
+	print $log_filehandle "Special analysis? $inheritmodel\n";
+}
+
+sub readPedigree {
+	my ($subjectdeffile, $log_filehandle) = @_;
+	my (%countuniquefamilies_hash, @orderedsubjects, %subjects);
+	
+	########## Order of subjects in this file must correspond to order of genotype columns
+	open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
+	while (<SUBJECTS>) {
+		$_ =~ s/\s+$//;					# Remove line endings
+		print $log_filehandle "$_\n";
+		my ($familyid, $subjectid, $father, $mother, $sex, $relation, $desiredgeno) = split("\t", $_);
+		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
+		push(@orderedsubjects, $subjectid);
+		if ($subjectid !~ '#') {
+			push(@{$countuniquefamilies_hash{$familyid}}, $relation);
+		} else {
+			print $log_filehandle "$subjectid is being skipped in this analysis\n";
+		}
+	}
+	close SUBJECTS;
+	my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
+	print $log_filehandle "\n";
+	
+	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, \$countuniquefamilies);
 }
 
 sub parseHeader {
@@ -683,7 +663,6 @@ sub parseHeader {
 			push(@genotypecolumns, $i);
 		}
 		if ($columnname =~ /Freqin/i) {
-			$filehasfreqs = 1;
 			if ($columnname =~ /FreqinCMG/i) {
 				$freqinCMGcol = $i;
 			} elsif ($columnname =~ /FreqinOutsidePop/i) {
