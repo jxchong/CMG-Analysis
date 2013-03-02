@@ -100,13 +100,9 @@ while ( <$input_filehandle> ) {
 	
 	my @line = split ("\t", $_);
 	my $countmatches = 0;
-	my ($chr, $pos, $vartype, $ref, $alt);
+	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
 	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos);
-	# my $indbsnp = 'NA';
-	# my $inUWexomes = 'NA';
-	# my $UWexomescovered = 'NA';
-	my $filterset;
 	
 	if ($inputfiletype eq 'SeattleSeqAnnotation') {
 		# parse_SeattleSeqAnnotation134_byline();
