@@ -50,8 +50,14 @@ if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of 
 		$headerline = $_;
 		$headerline =~ s/\s+$//;					# Remove line endings
 		if ($headerline !~ /^#CHROM/) {
-			print OUT "$headerline\n";
-			next;
+			if ($headerline =~ "##fileformat=VCFv4") {
+				print OUT "$headerline\n";
+				print OUT '##INFO=<ID=AFPOP,Number=1,Type=Float,Description="alt allele freq in outbred populations">'."\n";
+				print OUT '##INFO=<ID=AFCMG,Number=1,Type=Float,Description="alt allele freq in exomes sequenced by CMG">'."\n";
+				##INFO=<ID=HA,Number=1,Type=Float,Description="AfricanHapMapFreq">
+			} else {
+				print OUT "$headerline\n";
+			}
 		} else {
 			last;
 		}
@@ -62,8 +68,18 @@ if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of 
 }
 close FILE;
 
+my $vcfinfocol;
 my @header = split("\t", $headerline);
-print OUT join("\t", @header)."\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
+if ($inputfiletype eq 'vcf') {
+	for (my $i=0; $i<=$#header; $i++) {
+		if ($header[$i] eq 'INFO') {
+			$vcfinfocol = $i;
+		}
+	}
+	print OUT join("\t", @header)."\n";
+} else {
+	print OUT join("\t", @header)."\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
+}
 
 open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 while ( <FILE> ) {
@@ -108,8 +124,16 @@ while ( <FILE> ) {
 	# if (defined $chr_contents{$fakelookup}{'pop'}) {
 	# 	print "fake lookup exists\n";
 	# }
+	my $afpop = sprintf("%.4f", $maxpopmaf);
+	my $afcmg = sprintf("%.4f", $errorfreq);
+	if ($inputfiletype eq 'vcf') {
+		print OUT join("\t", @line[0..($vcfinfocol-1)]);
+		print OUT "\t$line[$vcfinfocol];AFCMG=$afcmg;AFPOP=$afpop\t";
+		print OUT join("\t", @line[($vcfinfocol+1)..$#line])."\n";
+	} else {
+		print OUT join("\t", @line)."$afcmg\t$afpop\n";
+	}
 	
-	print OUT join("\t", @line)."\t".sprintf("%.4f", $errorfreq)."\t".sprintf("%.4f", $maxpopmaf)."\n";
 }
 close FILE;
 
