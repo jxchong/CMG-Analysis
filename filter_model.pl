@@ -102,14 +102,16 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 	
 	if ($inputfiletype eq 'SeattleSeqAnnotation') {
 		# parse_SeattleSeqAnnotation134_byline();
 	} elsif ($inputfiletype eq 'SSAnnotation') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_SSAnnotation134_byline(\@genotypecolumns, \@dpcolumns, \@qualcolumns, @line);
+		$freqinCMG = $line[$freqinCMGcol];		
+		$freqinOutside = $line[$freqinOutsidecol];
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
 		if ($debugmode >= 3) {
 			if ($chr < 8) {
 				next;
@@ -136,8 +138,8 @@ while ( <$input_filehandle> ) {
 	if ($debugmode >= 2) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
 	
 	my ($iserror, $iscommon) = (0,0);
-	my $freqinCMG = $line[$freqinCMGcol]/100;							# storing allele freq as percentage
-	my $freqinOutside = $line[$freqinOutsidecol]/100;					# storing allele freq as percentage
+	$freqinCMG = $freqinCMG/100;							# storing allele freq as percentage
+	$freqinOutside = $freqinOutside/100;					# storing allele freq as percentage
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
@@ -949,7 +951,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -962,6 +964,8 @@ sub parse_vcf_byline {
 	$aminoacids = retrieveVCFfield('AAC', $line[7], 'info');
 	$proteinpos = retrieveVCFfield('PP', $line[7], 'info');
 	$cdnapos = retrieveVCFfield('CDP', $line[7], 'info');
+	$freqinCMG = retrieveVCFfield('AFCMG', $line[7], 'info');
+	$freqinOutside = retrieveVCFfield('AFPOP', $line[7], 'info');
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
 	
@@ -1001,8 +1005,8 @@ sub parse_vcf_byline {
 			}
 		}
 	}
-	# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";			## DEBUG
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos);
+	# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 }
 
 sub parse_SeattleSeqAnnotation134_byline {
