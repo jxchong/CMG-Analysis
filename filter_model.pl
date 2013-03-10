@@ -40,8 +40,11 @@ print $log_filehandle "input=$inputfile\noutput=$outputfile\nsubjectreq=$subject
 printParamstoLog($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minqual, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
 
 ###################### READ PEDIGREE/SUBJECT DATA ###################### 
-my (%countuniquefamilies_hash, @orderedsubjects, %subjects, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
-
+my ($countuniquefamilies_hash_ref, $orderedsubjects_ref, $subjects_ref, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
+my %countuniquefamilies_hash = %{$countuniquefamilies_hash_ref};
+my @orderedsubjects = @{$orderedsubjects_ref};
+my %subjects = %{$subjects_ref};
+	
 ###################### BEGIN READING INPUT and HEADER ###################### 
 open (my $output_filehandle, ">", $outputfile) or die "Cannot write to $outputfile: $!.\n";
 my $input_filehandle;
@@ -52,11 +55,13 @@ if ($inputfile =~ /\.gz$/) {
 }
 print STDOUT "Reading in genotypes from $inputfile\n";
 
+my $countskipheaderlines;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
 if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of the file
 	while (<$input_filehandle>) {
 		$headerline = $_;
+		$countskipheaderlines++;
 		next if ($headerline !~ "#CHROM");
 		$headerline =~ s/\s+$//;					# Remove line endings
 		my @header = split("\t", $headerline);
@@ -65,6 +70,10 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 } else {
 	$headerline = <$input_filehandle>;
 }
+if ($debugmode >= 1) {
+	print "$countskipheaderlines lines skipped in header\n";
+}
+
 $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("\t", $headerline);
 my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
@@ -112,22 +121,28 @@ while ( <$input_filehandle> ) {
 		$freqinOutside = $line[$freqinOutsidecol];
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
-		if ($debugmode >= 3) {
-			if ($chr < 8) {
-				next;
-			} elsif ($chr == 9) {
-				last;
-			}
-			# if ($chr == 6 && $pos == 31238942 ) {
-				# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";
-			# }
-		}
+		# if ($debugmode >= 3) {
+		# 	if ($chr < 8) {
+		# 		next;
+		# 	} elsif ($chr == 9) {
+		# 		last;
+		# 	}
+		# 	# if ($chr == 6 && $pos == 31238942 ) {
+		# 		# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";
+		# 	# }
+		# }
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
 	@subjectgenotypes = @{$subjgeno_ref};
 	@subjectdps = @{$subjdps_ref};
 	@subjectquals = @{$subjquals_ref};
+	
+	# if ($debugmode >= 4) {
+	# 	print "genotypes=@subjectgenotypes\n";
+	# 	print "dps=@subjectdps\n";
+	# 	print "GQs=@subjectquals\n";
+	# }
 	
 	# Print current chromosome being processed (for user knowledge)
 	if ($workingchr ne $chr) {
@@ -143,22 +158,22 @@ while ( <$input_filehandle> ) {
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
-		if ($debugmode >= 2) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
+		if ($debugmode >= 4) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
 	}
 	if ($freqinOutside > $mafcutoff) {
 		$iscommon = 1;
 		$countcommonvariants++;
-		if ($debugmode >= 2) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
+		if ($debugmode >= 4) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
 	}
 	my $resultfunctionfilter = shouldfunctionFilter(\%GVStoexclude, $functionimpact);
 	my $resultGATKfilter = passGATKfilters(\%allowedGATKfilters, $filterset);
 	if ($resultfunctionfilter == 1) {
 		$count_variants_excluded_function++;
-		if ($debugmode >= 2) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
+		if ($debugmode >= 4) { print STDOUT "rejecting b/c of function filter\n"; }			## DEBUG
 	}
 	if ($resultGATKfilter == 0) {
 		$count_variants_excluded_gatk++;
-		if ($debugmode >= 2) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
+		if ($debugmode >= 4) { print STDOUT "rejecting b/c of GATK filter\n"; }			## DEBUG
 	}
 
 	if ($iserror==0 && $iscommon==0 && $resultfunctionfilter==0 && ($filterset eq 'NA' || $resultGATKfilter==1)) {
@@ -172,10 +187,10 @@ while ( <$input_filehandle> ) {
 		my $ishet_excluded = 0;
 		for (my $i=0; $i<=$#subjectgenotypes; $i++) {										# determine genotype for each subject
 			my ($qual, $dp) = ('NA', 'NA');
-			if (@dpcolumns) {
+			if (@subjectdps) {
 				$dp = $subjectdps[$i];
 			}
-			if (@qualcolumns) {
+			if (@subjectquals) {
 				$qual = $subjectquals[$i];			
 			}
 			my $genotype = $subjectgenotypes[$i];
@@ -200,16 +215,16 @@ while ( <$input_filehandle> ) {
 					}
 					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
 					if ($dp >= $mindp || $qual >= $minqual) {	
-						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr)) {
+						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr, $debugmode) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr, $debugmode)) {
 							$countcarriers++;
 						}
 					}
-				} elsif (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr)) {
+				} elsif (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr, $debugmode) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr, $debugmode)) {
 					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
 					$countcarriers++;
 				}
 				
-				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);	
+				my $ismatch = checkGenoMatch($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr, $debugmode);	
 				$typeofgeno_all{$familyid}{$relation} = determineGenoType($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr);
 				$checkfamilies{$familyid}{$relation} = $ismatch;
 				$qualityflags{$familyid}{$relation} = $thissubjflag;
@@ -226,7 +241,7 @@ while ( <$input_filehandle> ) {
 						}
 					}
 				}
-				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation (sex=$sex) $subjectid genotype ($genotype) $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag)\n"; }			## DEBUG
+				if ($debugmode >= 3) { my $matchtext = 'is'; if ($ismatch==0) {$matchtext='is not';} print STDOUT "$familyid-$relation (sex=$sex) $subjectid genotype ($genotype) $matchtext a match to $desiredgeno: with GQ/DP flag=($thissubjflag) based on DP=$dp and GQ=$qual\n"; }			## DEBUG
 			} 
 		}
 		
@@ -332,7 +347,7 @@ while ( <$input_filehandle> ) {
 		$count_dpexclude += $countfamiliesrejectqual[0];
 		$count_qualexclude += $countfamiliesrejectqual[1];
 
-		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units and ".scalar(keys %matchingfamilies)." families has a hit at $gene:$pos\n"; }			## DEBUG
+		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units and ".scalar(keys %matchingfamilies)." families out of ".scalar(keys %checkfamilies)." families of some type have a hit at $gene:$pos\n"; }			## DEBUG
 		if ((scalar(keys %matchingfamilyunits)+scalar(keys %matchingfamilies)) > 0) {
 			my $data;
 			if ($inputfiletype ne 'vcf') {
@@ -636,7 +651,10 @@ sub readPedigree {
 	my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 	print $log_filehandle "\n";
 	
-	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, \$countuniquefamilies);
+	if ($debugmode >= 1) {
+		print "Read in $countuniquefamilies families from $subjectdeffile\n";
+	}
+	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, $countuniquefamilies);
 }
 
 sub parseHeader {
@@ -683,12 +701,14 @@ sub parseHeader {
 
 sub passGATKfilters {
 	my ($allowedfilters_ref, $filterset) = @_;
-	my @thesefilters = split(';', $filterset);
 	my $keep = 1;
-	foreach my $filter (@thesefilters) {
-		if (!defined ${$allowedfilters_ref}{$filter}) {
-			$keep = 0;
-		} 
+	if ($filterset ne '.') {
+		my @thesefilters = split(';', $filterset);
+		foreach my $filter (@thesefilters) {
+			if (!defined ${$allowedfilters_ref}{$filter}) {
+				$keep = 0;
+			} 
+		}
 	}
 	return $keep;
 }
@@ -711,7 +731,7 @@ sub shouldfunctionFilter {
 }
 
 sub checkGenoMatch {
-	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr) = @_;		
+	my ($vartype, $ref, $alt, $genotype, $desiredgeno, $isNhit, $sex, $chr, $debugmode) = @_;		
 	my @alleles;
 	my $ismatch = 0;
 	
@@ -754,7 +774,9 @@ sub checkGenoMatch {
 			}
 		} 
 	}
-	# print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
+	if ($debugmode >= 3) {
+		print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
+	}
 	return $ismatch;
 }
 
@@ -970,7 +992,7 @@ sub parse_vcf_byline {
 	# $UWexomescovered = $line[17];
 	
 	my @format = split(":", $line[8]);
-	# print "originalformat=$line[8]\n";
+	if ($debugmode >= 4) { print "originalformat=$line[8]\n"; }	
 	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_rd, $pindel_ad);
 	for (my $i=0; $i<=$#format; $i++) {
 		if ($format[$i] eq 'GT') {
@@ -985,6 +1007,7 @@ sub parse_vcf_byline {
 			$pindel_ad = $i;
 		}
 	}
+	# handling JHU data from samtools; has no DP column!!
 
 	foreach my $subject (@line[@{$subj_columns_ref}]) {
 		my @subjectdata = split(":", $subject);
@@ -1005,7 +1028,9 @@ sub parse_vcf_byline {
 			}
 		}
 	}
-	# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
+	if ($debugmode >= 4) {
+		print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
+	}
 	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 }
 
