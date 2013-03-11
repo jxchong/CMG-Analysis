@@ -11,7 +11,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode, $logfile);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -26,18 +26,18 @@ GetOptions(
 	'mafcutoff:f' => \$mafcutoff,
 	'errorcutoff:f' => \$cmgfreqcutoff,
 	'dp:f' => \$mindp,
-	'gq:f' => \$minqual,
+	'gq:f' => \$minGQ,
 	'debug:i' => \$debugmode,
 );
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
-	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, $debugmode);
+	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, $debugmode);
 my %allowedGATKfilters = %{$allowedGATKfilters_ref};
 my %GVStoexclude = %{$GVStoexclude_ref};
 
 open (my $log_filehandle, ">", $logfile) or die "Cannot write to $logfile: $!.\n";
 print $log_filehandle "input=$inputfile\noutput=$outputfile\nsubjectreq=$subjectdeffile\n";
-printParamstoLog($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minqual, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
+printParamstoLog($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minGQ, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
 
 ###################### READ PEDIGREE/SUBJECT DATA ###################### 
 my ($countuniquefamilies_hash_ref, $orderedsubjects_ref, $subjects_ref, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
@@ -71,7 +71,7 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 	$headerline = <$input_filehandle>;
 }
 if ($debugmode >= 1) {
-	print "$countskipheaderlines lines skipped in header\n";
+	print STDOUT "$countskipheaderlines lines skipped in header\n";
 }
 
 $headerline =~ s/\s+$//;					# Remove line endings
@@ -122,12 +122,14 @@ while ( <$input_filehandle> ) {
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
 		if ($debugmode >= 4) {
-		# 	if ($chr < 8) {
-		# 		next;
-		# 	} elsif ($chr == 9) {
-		# 		last;
-		# 	}
-			print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";
+			if ($chr < 2) {
+				next;
+			} elsif ($chr > 2) {
+				last;
+			}			
+		}
+		if ($debugmode >= 3) {
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";
 		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -137,9 +139,9 @@ while ( <$input_filehandle> ) {
 	@subjectquals = @{$subjquals_ref};
 	
 	# if ($debugmode >= 4) {
-	# 	print "genotypes=@subjectgenotypes\n";
-	# 	print "dps=@subjectdps\n";
-	# 	print "GQs=@subjectquals\n";
+	# 	print STDOUT "genotypes=@subjectgenotypes\n";
+	# 	print STDOUT "dps=@subjectdps\n";
+	# 	print STDOUT "GQs=@subjectquals\n";
 	# }
 	
 	# Print current chromosome being processed (for user knowledge)
@@ -147,9 +149,7 @@ while ( <$input_filehandle> ) {
 		print STDOUT "Reading variants on chr $chr\n";
 		$workingchr = $chr;
 	}
-		
-	if ($debugmode >= 2) { print STDOUT "looking at $chr:$pos $vartype $ref/$alt\n"; } 			## DEBUG
-	
+			
 	my ($iserror, $iscommon) = (0,0);
 	$freqinCMG = $freqinCMG/100;							# storing allele freq as percentage
 	$freqinOutside = $freqinOutside/100;					# storing allele freq as percentage
@@ -175,7 +175,7 @@ while ( <$input_filehandle> ) {
 	}
 
 	if ($iserror==0 && $iscommon==0 && $resultfunctionfilter==0 && ($filterset eq 'NA' || $resultGATKfilter==1)) {
-		if ($debugmode >= 2) { print STDOUT "variant at $pos passes initial filters\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "\nvariant at $chr:$pos in $gene passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
 		my %typeofgeno_all;
@@ -208,11 +208,11 @@ while ( <$input_filehandle> ) {
 					if ($dp < $mindp) {
 						$thissubjflag .= "DP";
 					}
-					if ($qual < $minqual) {
+					if ($qual < $minGQ) {
 						$thissubjflag .= "GQ";
 					}
 					# for this variant, determine if this subject has at least one copy of the alt allele, if so, count as a carrier (for determining if this is a unique de novo)
-					if ($dp >= $mindp || $qual >= $minqual) {	
+					if ($dp >= $mindp || $qual >= $minGQ) {	
 						if (checkGenoMatch($vartype, $ref, $alt, $genotype, 'alt', $isNhit, $sex, $chr, $debugmode) || checkGenoMatch($vartype, $ref, $alt, $genotype, 'het', $isNhit, $sex, $chr, $debugmode)) {
 							$countcarriers++;
 						}
@@ -279,12 +279,13 @@ while ( <$input_filehandle> ) {
 				
 				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'}, $inheritmodel, $compoundhetcarriers{$familyid}, $typeofgeno_all{$familyid}{'father'}, $typeofgeno_all{$familyid}{'mother'});
 				if ($matchsubj eq 'reject') {
+					if ($debugmode >=4) { print STDOUT "reject\n"; }
 					next;							# skip to evaluation of next family; doesn't match inheritance model
 				}
 				if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilymatch genotype matches vs $familysize members and $nparentswithdata parents with genotype data\n"; }
 				if (($thisfamilymatch+$maxmissesperfamily) == ($familysize-$nparentswithdata)) {					# if all affected children have at least one hit
 					$countfamiliesmatchmodel++;
-					if (($rejectquality[0]+$rejectquality[1]) == 0) {
+					if (($rejectquality[0]+$rejectquality[1]) == 0 || $isNhit eq 'hit') {
 						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
 						$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
 						foreach my $member (@familymembers) {
@@ -324,7 +325,7 @@ while ( <$input_filehandle> ) {
 
 				if ($thisfamilymatch == $familysize || ($familysize>=2 && $maxmissesperfamily>0 && $countparentmatches==$nparents && ($nkids-($thisfamilymatch-$countparentmatches)) <= $maxmissesperfamily)) {
 					$countfamiliesmatchmodel++;
-					if (($rejectquality[0]+$rejectquality[1]) == 0) {
+					if (($rejectquality[0]+$rejectquality[1]) == 0 || $isNhit eq 'hit') {
 						$countfamiliesmatchmodel += 1;
 						$matchingfamilies{$familyid} = 1;
 					} else {
@@ -368,7 +369,7 @@ while ( <$input_filehandle> ) {
 		$countexcludedvariants++;
 	}
 	
-	if ($debugmode >= 2) { print STDOUT "\n"; }			## DEBUG
+	# if ($debugmode >= 2) { print STDOUT "\n"; }			## DEBUG
 	
 	# if ($chr == 12) {
 	# 	print STDOUT "stopping at chromosome $chr\n";
@@ -381,7 +382,7 @@ close $input_filehandle;
 
 
 # Check putative hit list for all genes and count number of valid hits across all families
-print "\nChecking all genes for desired number of hits in desired number of families\n";
+print STDOUT "\nChecking all genes for desired number of hits in desired number of families\n";
 my $countgeneswhits = 0;
 my $countgenesrejectedhits = 0;
 my $countoutputvariants = 0;
@@ -389,14 +390,14 @@ my $genecounter = 0;
 my $totalgenes = scalar(keys %genehits);
 while (my ($gene, $results_ref) = each %genehits) {
 	$genecounter++;
-	if ($debugmode >= 1) { print "\n===========================================================================\n"; }
+	if ($debugmode >= 1) { print STDOUT "\n===========================================================================\n"; }
 	if ($genecounter % 1000 == 0) {
-		print "Checking gene #$genecounter (out of $totalgenes) for hits\n";
+		print STDOUT "Checking gene #$genecounter (out of $totalgenes) for hits\n";
 	}
 	my @hitdata = @{$results_ref};
 	
 	# account for possible compound het model, then count hits in each family for this gene
-	if ($debugmode >= 1) { print "in $gene:\n"; }		
+	if ($debugmode >= 1) { print STDOUT "in $gene:\n"; }		
 	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
 	# review all families for required number of hits in this gene
 	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
@@ -407,7 +408,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  		my $hitvarinfo = ${$hit}[0];
 			my %matchingfamilies = %{${$hit}[1]};
 			my %matchingfamilyunits = %{${$hit}[2]};
-			if ($debugmode >= 1) { print "Enough families, total=".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)." have hits\n"; }
+			if ($debugmode >= 1) { print STDOUT "Enough families, total=".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)." have hits\n"; }
 			
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
@@ -421,7 +422,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	  	}
 	} else {
 		$countgenesrejectedhits++;
-		if ($debugmode >= 1) { print "Rejecting $gene b/c not enough families/subjects within family have hits\n"; }
+		if ($debugmode >= 1) { print STDOUT "Rejecting $gene b/c not enough families/subjects within family have hits\n"; }
 	}
 }
 
@@ -457,14 +458,14 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 
 		while (my($familyid, $ismatch) = each %matchingfamilies) {
 			$familieswHitsinGene{$familyid}++;	
-			if ($debugmode >= 2) { print "family=$familyid has a match\n"; }			
+			if ($debugmode >= 2) { print STDOUT "family=$familyid has a match\n"; }			
 		}
 
 		# total up hits per family member
 		if ($inheritmodel =~ 'compoundhet') {
-			if ($debugmode >= 1) { print "For this hit, implementing compoundhet model (add to total hits per individual in total ".scalar(keys %matchingfamilyunits)." family units)\n"; }	
+			if ($debugmode >= 1) { print STDOUT "For this hit, implementing compoundhet model (add to total hits per individual in total ".scalar(keys %matchingfamilyunits)." family units)\n"; }	
 			while (my($familyid, $thisfamilydata_ref) = each %matchingfamilyunits) {
-				if ($debugmode >= 1) { print "Counting hits in individuals in family=$familyid\n"; }	
+				if ($debugmode >= 1) { print STDOUT "Counting hits in individuals in family=$familyid\n"; }	
 				if (!defined $familieswHitsinGene{$familyid}) {
 					$familieswHitsinGene{$familyid}{'father'} = 0;
 					$familieswHitsinGene{$familyid}{'mother'} = 0;
@@ -476,13 +477,13 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 				} else {
 					$familieswHitsinGene{$familyid}{$matchsubj}++;											# hit comes from xxx parent
 				}
-				if ($debugmode >= 1) { print "a hit in family=$familyid comes from $matchsubj\n"; }	
+				if ($debugmode >= 1) { print STDOUT "a hit in family=$familyid comes from $matchsubj\n"; }	
 				
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
 					if ($member ne 'mother' && $member ne 'father') {				
 						$familieswHitsinGene{$familyid}{$member} += ${$thisfamilydata_ref}{$member};								# add one to hits in children
-						if ($debugmode >= 2) { print "family=$familyid $member added ${$thisfamilydata_ref}{$member} hits making a total $familieswHitsinGene{$familyid}{$member} hits\n"; }			
+						if ($debugmode >= 2) { print STDOUT "family=$familyid $member added ${$thisfamilydata_ref}{$member} hits making a total $familieswHitsinGene{$familyid}{$member} hits\n"; }			
 					}
 				}				
 			}
@@ -501,21 +502,21 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 	while (my($familyid, $familyhits) = each %familieswHitsinGene) {																		
 		if ($inheritmodel =~ 'compoundhet') {
 			if (ref($familyhits) eq 'HASH') {
-				if ($debugmode >= 1) { print "Counting hits in each individual in $familyid\n"; }	
+				if ($debugmode >= 1) { print STDOUT "Counting hits in each individual in $familyid\n"; }	
 				my $counthitsinfamily = 0;
 				my @familymembers = keys %{$familyhits};
 				foreach my $member (@familymembers) {
-					if ($debugmode >= 1) { print "${$familyhits}{$member} hit(s) in $member\n"; }	
+					if ($debugmode >= 1) { print STDOUT "${$familyhits}{$member} hit(s) in $member\n"; }	
 					if ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {
 						$counthitsinfamily++;
 					}
 				}
 
-				if ($debugmode >= 1) { print "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
+				if ($debugmode >= 1) { print STDOUT "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
 				
 				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
 					# $counthitsinfamily += 2;
-					if ($debugmode >= 3) { print "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
+					if ($debugmode >= 3) { print STDOUT "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
 					if ($counthitsinfamily+$maxmissesperfamily+2 >= scalar(@familymembers)) {
 						$countfamiliesmatch++;
 					}
@@ -526,7 +527,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				}
 			}
 		} else {
-			if ($debugmode >= 1) { print "family=$familyid has hits? $familyhits\n"; }
+			if ($debugmode >= 1) { print STDOUT "family=$familyid has hits? $familyhits\n"; }
 			if ($familyhits >= 1) {
 				$countfamiliesmatch++;
 			}
@@ -544,7 +545,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 
 sub checkandstoreOptions {
 	my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
 		$debugmode) = @_;
 	my (%allowedGATKfilters, %GVStoexclude);
 	
@@ -562,13 +563,22 @@ sub checkandstoreOptions {
 		optionUsage("option --N not defined\n");
 	} elsif (!defined $maxmissesperfamily) {
 		optionUsage("option --maxmissesperfamily not defined\n");
-	}	
-	if (!defined $mindp) {
-		$mindp = 10;
 	}
-	if (!defined $minqual) {
-		$minqual = 30;
+	if ($isNhit ne 'hit' && $isNhit ne 'nohit') {
+		optionUsage("option --N defined but not valid (should be 'hit' or 'nohit')\n");
 	}
+	# if ($isNhit eq 'hit') {
+	# 	$mindp = 0;
+	# 	$minGQ = 0;
+	# } else {
+		if (!defined $mindp) {
+			$mindp = 10;
+		}
+		if (!defined $minGQ) {
+			$minGQ = 30;
+		}
+	# }
+
 	if (!defined $mafcutoff) {
 		$mafcutoff = 0.01;
 	}
@@ -596,8 +606,8 @@ sub checkandstoreOptions {
 		%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 	} 
 	if ($excludeGVSfunction eq 'default') {
-		%GVStoexclude = map {$_ => 1} qw(intron intergenic coding-synonymous utr-3 utr-5 near-gene-3 near-gene-5 none);
-	} elsif ($excludeGVSfunction eq 'none')  {
+		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous);
+	} elsif ($excludeGVSfunction eq 'NA')  {
 		%GVStoexclude = map {$_ => 1} qw(NA);
 	} else {
 		%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
@@ -605,17 +615,17 @@ sub checkandstoreOptions {
 	
 	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minqual, $maxmissesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
 		$debugmode, \%allowedGATKfilters, \%GVStoexclude, $logfile);
 }
 
 sub printParamstoLog {
-	my ($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minqual, $isNhit, $gvstoexclude_string, $allowedgatk_string, $mafcutoff, $cmgfreqcutoff, $inheritmodel) = @_;
+	my ($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minGQ, $isNhit, $gvstoexclude_string, $allowedgatk_string, $mafcutoff, $cmgfreqcutoff, $inheritmodel) = @_;
 
 	print $log_filehandle "Requiring hits in gene in at least $minhits subjects/families\n";
 	print $log_filehandle "Allowing up to $maxmissesperfamily subjects per family to not have the correct genotype\n";
 	# if (@dpcolumns && @qualcolumns) {
-		print $log_filehandle "Genotypes require at least $mindp depth and at least $minqual qual, otherwise genotype set to be missing\n";
+		print $log_filehandle "Genotypes require at least $mindp depth and at least $minGQ qual, otherwise genotype set to be missing\n";
 	# } else {
 		# print $log_filehandle "Per-sample depth and quality information not available\n";
 	# }
@@ -637,6 +647,10 @@ sub readPedigree {
 		$_ =~ s/\s+$//;					# Remove line endings
 		print $log_filehandle "$_\n";
 		my ($familyid, $subjectid, $father, $mother, $sex, $relation, $desiredgeno) = split("\t", $_);
+		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
+			print $log_filehandle "$familyid\t$subjectid has an illegal desired genotype ($desiredgeno)\n";
+			die;
+		}
 		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
 		push(@orderedsubjects, $subjectid);
 		if ($subjectid !~ '#') {
@@ -650,7 +664,7 @@ sub readPedigree {
 	print $log_filehandle "\n";
 	
 	if ($debugmode >= 1) {
-		print "Read in $countuniquefamilies families from $subjectdeffile\n";
+		print STDOUT "Read in $countuniquefamilies families from $subjectdeffile\n";
 	}
 	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, $countuniquefamilies);
 }
@@ -772,9 +786,9 @@ sub checkGenoMatch {
 			}
 		} 
 	}
-	if ($debugmode >= 3) {
-		print "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
-	}
+	# if ($debugmode >= 3) {
+		# print STDOUT "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
+	# }
 	return $ismatch;
 }
 
@@ -798,7 +812,7 @@ sub determineGenoType {
 		@alleles = split("/", $genotype);
 	}
 	
-	if ($genotype eq 'N') {
+	if ($genotype eq 'N' || $genotype eq 'NA') {
 		$typeofgeno = 'N';
 	} elsif ($alleles[0] eq $ref && $alleles[1] eq $ref) {
 		$typeofgeno = 'homref';
@@ -841,8 +855,11 @@ sub selectRefAlt {
 sub determineMatchSubject {
 	my ($fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno) = @_;
 	my $matchsubj = 'reject';
-	
-	if ("$fatherismatch$motherismatch" !~ 'NA') {											# if both parents have genotypes
+	if ($debugmode >= 4) {
+		print STDOUT "determineMatchSubject(): $fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno\n";
+	}
+	if ("$fatherismatch$motherismatch" !~ 'NA' && "$fathertypeofgeno$mothertypeofgeno" !~ 'N') {											# if both parents have genotypes
+		### if ($fatherismatch+$motherismatch) == 2, then both parents would be carriers for the same rare mutation?!, in which case it would be homozygous recessive not compound het; just very very unlikely
 		if (($fatherismatch+$motherismatch) == 1 || ($inheritmodel eq 'compoundhetmosaic' && ($fatherismatch+$motherismatch) == 2)) {
 			if ($inheritmodel eq 'compoundhetmosaic') {
 				if ($requiredcarrier eq 'father') {
@@ -859,28 +876,28 @@ sub determineMatchSubject {
 					}
 				}
 			} elsif ($inheritmodel eq 'compoundhet') {
-				if ($debugmode >=3) { print "father is $fathertypeofgeno, mother is $mothertypeofgeno: "; }
+				if ($debugmode >=3) { print STDOUT "father is $fathertypeofgeno, mother is $mothertypeofgeno: "; }
 				if (($fathertypeofgeno eq 'het' || $fathertypeofgeno eq 'homalt') xor ($mothertypeofgeno eq 'het' || $mothertypeofgeno eq 'homalt')) {
-					if ($debugmode >=3) { print "pass\n"; }
+					if ($debugmode >=3) { print STDOUT "pass\n"; }
 					if ($fatherismatch == 1) {
 						$matchsubj = 'father';
 					} elsif ($motherismatch == 1) {
 						$matchsubj = 'mother';
 					}	
 				} else {
-					if ($debugmode >=3) { print "fail\n" }
+					if ($debugmode >=3) { print STDOUT "fail\n" }
 				}
 			}
 		}
-	} elsif ($fatherismatch eq 'NA' && $motherismatch eq 'NA') {							# if both parents do not have a genotype
+	} elsif ($fathertypeofgeno =~ 'N' && $mothertypeofgeno =~ 'N') {							# if both parents do not have a genotype
 		$matchsubj = 'either';
-	} elsif ($fatherismatch eq 'NA') {														# if father does not have genotype but mother does
+	} elsif ($fathertypeofgeno =~ 'N') {														# if father does not have genotype but mother does
 		if ($motherismatch == 1) {
 			$matchsubj = 'mother';
 		} elsif ($motherismatch == 0) {
 			$matchsubj = 'father';
 		}
-	} elsif ($motherismatch eq 'NA') {														# if mother does not have genotype but father does
+	} elsif ($mothertypeofgeno =~ 'N') {														# if mother does not have genotype but father does
 		if ($fatherismatch == 1) {
 			$matchsubj = 'father';
 		} elsif ($fatherismatch == 0) {
@@ -991,7 +1008,6 @@ sub parse_vcf_byline {
 	# $UWexomescovered = $line[17];
 	
 	my @format = split(":", $line[8]);
-	if ($debugmode >= 4) { print "originalformat=$line[8]\n"; }	
 	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_rd, $pindel_ad);
 	my $altdp = 0;
 	for (my $i=0; $i<=$#format; $i++) {
@@ -1016,7 +1032,7 @@ sub parse_vcf_byline {
 	foreach my $subject (@line[@{$subj_columns_ref}]) {
 		my @subjectdata = split(":", $subject);
 		push(@subjectgenotypes, vcfgeno2calls($subjectdata[$gtcolnum], $ref, $alt));
-		if ($subject eq './.') {
+		if ($subject eq './.' || $subject eq '.') {
 			push(@subjectdps, 0);
 			push(@subjectquals, 0);
 		} else {
@@ -1037,9 +1053,9 @@ sub parse_vcf_byline {
 			}
 		}
 	}
-	if ($debugmode >= 4) {
-		print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
-	}
+	# if ($debugmode >= 4) {
+	# 	print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
+	# }
 	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 }
 
@@ -1081,8 +1097,8 @@ sub optionUsage {
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all' or 'default')\n";
 	print "\t\tdefault=PASS\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
-	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default'\n";
-		print "\t\tdefault=intron,intergenic,coding-synonymous,utr-3,utr-5,near-gene-3,near-gene-5\n";
+	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default', or 'NA'\n";
+		print "\t\tdefault=intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none\n";
 	print "\t--model\toptional: ('compoundhet' if compound het model desired, 'unique' if filtering for de novo unique; otherwise don't specify this option at all)\n";
 	print "\t--mafcutoff\toptional: (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	print "\t--errorcutoff\toptional: (cutoff frequency for filtering out systematic errors based on frequency in all CMG exomes to date)\n";
