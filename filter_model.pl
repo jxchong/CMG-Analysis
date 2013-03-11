@@ -121,16 +121,14 @@ while ( <$input_filehandle> ) {
 		$freqinOutside = $line[$freqinOutsidecol];
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
-		# if ($debugmode >= 3) {
+		if ($debugmode >= 4) {
 		# 	if ($chr < 8) {
 		# 		next;
 		# 	} elsif ($chr == 9) {
 		# 		last;
 		# 	}
-		# 	# if ($chr == 6 && $pos == 31238942 ) {
-		# 		# print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos\n";
-		# 	# }
-		# }
+			print "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";
+		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
 	} 
@@ -915,10 +913,13 @@ sub determineInputType {
 	return $inputtype;
 }
 
-sub retrieveVCFfield {
-	my ($desiredfieldname, $vcfcolumn, $vcfcoltype) = @_;
-	my $value;
+sub retrieveVCFfields {
+	my ($vcfcolumn, $vcfcoltype) = @_;
 	my @columncontents;
+	my %vcffields;
+	foreach my $name (qw(GL FG CP CG PP AAC PP CDP AFCMG AFPOP)) {
+		$vcffields{$name} = '.';
+	}
 	
 	if ($vcfcoltype eq 'genotype') {
 		@columncontents = split(":", $vcfcolumn);
@@ -927,18 +928,14 @@ sub retrieveVCFfield {
 	} else {
 		@columncontents = split(/[;:]/, $vcfcolumn);
 	}
-	my $searchstring = quotemeta "$desiredfieldname=";
 	foreach my $column (@columncontents) {
-		if ($column =~ $searchstring) {
-			$column =~ s/$searchstring//;
-			$value = $column;
+		my ($fieldname, $value) = split("=", $column);
+		if (!defined $value) {
+			$value = '.';
 		}
+		$vcffields{$fieldname} = $value;
 	}
-	if (!defined $value) {
-		$value = '.';
-	}
-	
-	return $value;
+	return \%vcffields;
 }
 
 # parse input files line by line
@@ -978,22 +975,25 @@ sub parse_vcf_byline {
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
 	my $filterset = $line[6];
-	$gene = retrieveVCFfield('GL', $line[7], 'info');
-	$functionimpact = retrieveVCFfield('FG', $line[7], 'info');
-	$phastcons = retrieveVCFfield('CP', $line[7], 'info');
-	$gerp = retrieveVCFfield('CG', $line[7], 'info');
-	$polyphen = retrieveVCFfield('PP', $line[7], 'info');
-	$aminoacids = retrieveVCFfield('AAC', $line[7], 'info');
-	$proteinpos = retrieveVCFfield('PP', $line[7], 'info');
-	$cdnapos = retrieveVCFfield('CDP', $line[7], 'info');
-	$freqinCMG = retrieveVCFfield('AFCMG', $line[7], 'info');
-	$freqinOutside = retrieveVCFfield('AFPOP', $line[7], 'info');
+	
+	my $infofields_ref = retrieveVCFfields($line[7], 'info');
+	$gene = ${$infofields_ref}{'GL'};
+	$functionimpact = ${$infofields_ref}{'FG'};
+	$phastcons = ${$infofields_ref}{'CP'};
+	$gerp = ${$infofields_ref}{'CG'};
+	$polyphen = ${$infofields_ref}{'PP'};
+	$aminoacids = ${$infofields_ref}{'AAC'};
+	$proteinpos = ${$infofields_ref}{'PP'};
+	$cdnapos = ${$infofields_ref}{'CDP'};
+	$freqinCMG = ${$infofields_ref}{'AFCMG'};
+	$freqinOutside = ${$infofields_ref}{'AFPOP'};
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
 	
 	my @format = split(":", $line[8]);
 	if ($debugmode >= 4) { print "originalformat=$line[8]\n"; }	
 	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_rd, $pindel_ad);
+	my $altdp = 0;
 	for (my $i=0; $i<=$#format; $i++) {
 		if ($format[$i] eq 'GT') {
 			$gtcolnum = $i;
@@ -1005,10 +1005,14 @@ sub parse_vcf_byline {
 			$pindel_rd = $i;
 		} elsif ($format[$i] eq 'AD') {
 			$pindel_ad = $i;
+		} elsif ($format[$i] eq 'DP4') {
+			# samtools singlesample calls will put depth info (DP4) in INFO column; need to move to FORMAT column for multisample vcf and this script
+			$dpcolnum = $i;
+			$altdp = 1;
 		}
 	}
-	# handling JHU data from samtools; has no DP column!!
-
+	
+	# in UW CMG files, the only time DP,GQ are missing is if the call came from Pindel, so this assumes there is info from Pindel to retrieve
 	foreach my $subject (@line[@{$subj_columns_ref}]) {
 		my @subjectdata = split(":", $subject);
 		push(@subjectgenotypes, vcfgeno2calls($subjectdata[$gtcolnum], $ref, $alt));
@@ -1017,7 +1021,12 @@ sub parse_vcf_byline {
 			push(@subjectquals, 0);
 		} else {
 			if (defined $dpcolnum) {
-				push(@subjectdps, $subjectdata[$dpcolnum]);
+				if ($altdp == 0) {
+					push(@subjectdps, $subjectdata[$dpcolnum]);
+				} else {
+					my @dp4 = split(",", $subjectdata[$dpcolnum]);
+					push(@subjectdps, ($dp4[0]+$dp4[1]+$dp4[2]+$dp4[3]));
+				}
 			} else {
 				push(@subjectdps, ($subjectdata[$pindel_rd]+$subjectdata[$pindel_ad]));
 			}
