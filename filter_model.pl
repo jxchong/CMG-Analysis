@@ -11,14 +11,14 @@ use strict;
 use warnings;
 use Getopt::Long;
 
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, $debugmode, $logfile);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
 	'out=s' => \$outputfile,
 	'subjectreq=s' => \$subjectdeffile,
 	'minhits=i' => \$minhits,
-	'maxmissesperfamily=i' => \$maxmissesperfamily,
+	'maxmissesperfamily=i' => \$maxmismatchesperfamily,
 	'GATKkeep=s' => \$filters,
 	'N=s' => \$isNhit,
 	'excludefunction=s' => \$excludeGVSfunction,
@@ -30,14 +30,14 @@ GetOptions(
 	'debug:i' => \$debugmode,
 );
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
-	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, $debugmode);
+	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
 my %allowedGATKfilters = %{$allowedGATKfilters_ref};
 my %GVStoexclude = %{$GVStoexclude_ref};
 
 open (my $log_filehandle, ">", $logfile) or die "Cannot write to $logfile: $!.\n";
 print $log_filehandle "input=$inputfile\noutput=$outputfile\nsubjectreq=$subjectdeffile\n";
-printParamstoLog($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minGQ, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
+printParamstoLog($log_filehandle, $minhits, $maxmismatchesperfamily, $mindp, $minGQ, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
 
 ###################### READ PEDIGREE/SUBJECT DATA ###################### 
 my ($countuniquefamilies_hash_ref, $orderedsubjects_ref, $subjects_ref, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
@@ -207,7 +207,6 @@ while ( <$input_filehandle> ) {
 						$qualityflags{$familyid}{$member} = -1;
 					}
 				}
-				
 				my $thissubjflag = "";
 				if ($dp ne 'NA' && $qual ne 'NA') {															# if depth or qual information available
 					if ($dp < $mindp) {
@@ -255,10 +254,8 @@ while ( <$input_filehandle> ) {
 		my %matchingfamilyunits;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
 			my %thisfamily = %{$thisfamily_ref};											# storage for whether genotype matches expectations (either 1 or 0 for match or no match)
-			my $thisfamilykidsmatch = 0;
-			my $thisfamilyparentsmatch = 0;
+			my ($thisfamilykidsmatch, $thisfamilyparentsmatch, $countNgenotypes) = (0,0,0);
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
-			my @rejectquality = (0,0,0);
 			my $nparentswithdata = (defined $thisfamily{'father'}) + (defined $thisfamily{'mother'});
 			my $nkidswithdata = $familysize-$nparentswithdata;
 			if ($inheritmodel =~ 'compoundhet') {		
@@ -271,96 +268,82 @@ while ( <$input_filehandle> ) {
 	
 				if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
-				foreach my $member (@familymembers) {
-					if ($qualityflags{$familyid}{$member} =~ m/DP/i || $qualityflags{$familyid}{$member} =~ m/GQ/i) {
-						$rejectquality[2] += 1;																# store number of people who failed either the DP or GQ filter
-						if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
-							$rejectquality[0] += 1;															# store whether someone failed the DP filter
-						} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
-							$rejectquality[1] += 1;															# store whether someone failed the GQ filter
-						}
-					} 
-					
-					if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
-						$thisfamilykidsmatch += 1;																	# counts matches in the kids
-						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
+				foreach my $member (@familymembers) {									
+					my $countasmatch = 0;
+					my $failsquality = failsCallQuality($qualityflags{$familyid}{$member});
+					if ($failsquality) {
+						$countNgenotypes += 1;
 					}
-					if (($member eq 'mother' || $member eq 'father') && $thisfamily{$member} == 1) {
-						$thisfamilyparentsmatch += 1;																# counts matches in the parents
+					if ($isNhit eq 'hit' && $failsquality || ($isNhit eq 'hit' && !$failsquality && $thisfamily{$member}==1) || ($isNhit eq 'nohit' && !$failsquality && $thisfamily{$member}==1)) {
+						$countasmatch = 1;
+					} 
+					if ($countasmatch == 1) {
+						if ($member ne 'mother' && $member ne 'father') {
+							$thisfamilykidsmatch += 1;																	# counts matches in the kids	
+						} else {
+							$thisfamilyparentsmatch += 1;																# counts matches in the parents
+						}
 						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
 					}
 				}
 				
 				my $matchsubj = determineMatchSubject($thisfamily{'father'}, $thisfamily{'mother'}, $inheritmodel, $compoundhetcarriers{$familyid}, $typeofgeno_all{$familyid}{'father'}, $typeofgeno_all{$familyid}{'mother'});
-				if ($matchsubj eq 'reject') {
+				if ($matchsubj eq 'reject' || $thisfamilykidsmatch+$thisfamilyparentsmatch==0) {
 					if ($debugmode >=4) { print STDOUT "reject\n"; }
 					next;							# skip to evaluation of next family; doesn't match inheritance model
 				} else {
-					if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilykidsmatch+$thisfamilyparentsmatch matches out of $familysize genotypes; $thisfamilyparentsmatch/$nparentswithdata parents match; $rejectquality[2] genotypes in family have low DP/GQ\n"; }
-					if (    ($thisfamilyparentsmatch==0 && $thisfamilykidsmatch+$maxmissesperfamily>=$familysize) 
-					     || ($inheritmodel =~ 'compoundhet' && $thisfamilyparentsmatch==1 && $thisfamilykidsmatch+($thisfamilyparentsmatch+1)+$maxmissesperfamily>=$familysize)
-						 || ($inheritmodel eq 'compoundhetmosaic' && $thisfamilyparentsmatch==2 && $thisfamilykidsmatch+$thisfamilyparentsmatch+$maxmissesperfamily>=$familysize) 
+					if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilykidsmatch+$thisfamilyparentsmatch matches out of $familysize genotypes; $thisfamilyparentsmatch/$nparentswithdata parents match; $countNgenotypes genotypes in family have low DP/GQ\n"; }
+					## Note to self: under compoundhet model, if parents are available, one parent will not match at the site					
+					if ( ($thisfamilyparentsmatch==0 && $thisfamilykidsmatch+$maxmismatchesperfamily>=$familysize) 
+					     || ($inheritmodel =~ 'compoundhet' && $thisfamilykidsmatch+$thisfamilyparentsmatch+1+$maxmismatchesperfamily>=$familysize)
+						 || ($inheritmodel eq 'compoundhetmosaic' && $thisfamilykidsmatch+$thisfamilyparentsmatch+$maxmismatchesperfamily>=$familysize) 
 						 ) {		
-								## Note to self: under compoundhet model, if parents are available, one parent will not match at the site
 						$countfamiliesmatchmodel++;
-						my $pass = 0;
-						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, variant comes from $matchsubj; enough members ($thisfamilykidsmatch+$thisfamilyparentsmatch, $maxmissesperfamily allowed misses) have hits\n"; }
-						if ($rejectquality[2] == 0) {			# now deal with whether or not it passes DP/GQ
-							$pass = 1;
-						} else { # if ($isNhit eq 'hit') {
-							# isNhit maybe is not so useful in combination with $maxmissesperfamily????  yes it is; if genotype is confidently WRONG, then that is different than not called
-   						 	if ($thisfamilyparentsmatch==1 && $thisfamilykidsmatch+($thisfamilyparentsmatch+1)-$rejectquality[2]+$maxmissesperfamily>=$familysize || ($inheritmodel eq 'compoundhetmosaic' && $thisfamilyparentsmatch==2 && $thisfamilykidsmatch+$thisfamilyparentsmatch-$rejectquality[2]+$maxmissesperfamily>=$familysize)) {			# even though it fails DP/GQ, still count as a hit if it doesn't exceed the number of allowed misses
-   								$pass = 1;
-							} elsif ($thisfamilyparentsmatch==0 && $thisfamilykidsmatch+-$rejectquality[2]+$maxmissesperfamily>=$familysize) {
-								$pass = 1;
-							} 
+						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, variant comes from $matchsubj; enough members ($thisfamilykidsmatch+$thisfamilyparentsmatch, $maxmismatchesperfamily allowed misses) have hits\n"; }
+						$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
+						foreach my $member (@familymembers) {
+							$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
 						}
-									
-						if ($pass == 1) {
-							$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
-							foreach my $member (@familymembers) {
-								$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
-							}
-						} else {
-							if ($debugmode >= 3) { print STDOUT "fails the GQ/DP check\n"; }
-							$countfamiliesrejectqual[0] += $rejectquality[0];
-							$countfamiliesrejectqual[1] += $rejectquality[1];
-							if ($debugmode >= 3) { print STDOUT "rejecting family=$familyid, not enough members ($thisfamilykidsmatch+$thisfamilyparentsmatch) hit at $gene:$pos\n"; }
-						}
-					} 
+					} else {
+						if ($debugmode >=4) { print STDOUT "no hits, reject\n"; }
+					}
 				}
 			} else {
-				while (my ($relation, $thismatch) = each %thisfamily) {
+				while (my ($member, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
-						if ($relation eq 'father' || $relation eq 'mother') {
-							if ($thismatch == 1) {
-								$thisfamilyparentsmatch++;
-							}
-						} else {
-							$thisfamilykidsmatch += $thismatch;									
+						my $countasmatch = 0;
+						my $failsquality = failsCallQuality($qualityflags{$familyid}{$member});
+						if ($failsquality) {
+							$countNgenotypes += 1;
 						}
-						if ($qualityflags{$familyid}{$relation} =~ m/DP/i) {
-							$rejectquality[0] = 1;
-						} elsif ($qualityflags{$familyid}{$relation} =~ m/GQ/i) {
-							$rejectquality[1] = 1;
+						if ($isNhit eq 'hit' && $failsquality) {
+							$countasmatch = 1;
+						} elsif ($isNhit eq 'hit' && !$failsquality && $thismatch==1) {
+							$countasmatch = 1;
+						} elsif ($isNhit eq 'nohit' && !$failsquality && $thismatch==1) {
+							$countasmatch = 1;
+						}
+						if ($countasmatch == 1) {
+							if ($member ne 'mother' && $member ne 'father') {
+								$thisfamilykidsmatch += 1;																	# counts matches in the kids	
+							} else {
+								$thisfamilyparentsmatch += 1;																# counts matches in the parents
+							}
+							if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
 						}
 					}
 				}
-				
-				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilykidsmatch+$thisfamilyparentsmatch matching individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily misses\n"; }
-				if (($thisfamilyparentsmatch+$thisfamilykidsmatch) == $familysize || ($familysize>=2 && ($maxmissesperfamily+$thisfamilyparentsmatch+$thisfamilykidsmatch) >= $familysize)) {
-					$countfamiliesmatchmodel++;
-					# if all genotypes good quality OR we don't care about quality OR we have enough matches after allowing for bad quality calls
-					if ($rejectquality[2] == 0 || $isNhit eq 'hit' || $maxmissesperfamily+$thisfamilyparentsmatch+$thisfamilykidsmatch-$rejectquality[2] >= $familysize) {
-						$countfamiliesmatchmodel += 1;
+				if ($countNgenotypes == $familysize) {
+					if ($debugmode >= 2) { print STDOUT "rejecting b/c everyone in family had missing/poor quality genotypes\n"; }			## DEBUG
+					next;
+				} else {
+					if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilykidsmatch+$thisfamilyparentsmatch matching individuals out of $familysize matching the desired genotype, allowing $maxmismatchesperfamily misses; $countNgenotypes genotypes in family have low DP/GQ\n"; }
+					if (($thisfamilyparentsmatch+$thisfamilykidsmatch) == $familysize || ($familysize>=2 && ($maxmismatchesperfamily+$thisfamilyparentsmatch+$thisfamilykidsmatch) >= $familysize)) {
+						$countfamiliesmatchmodel++;
 						$matchingfamilies{$familyid} = 1;
 					} else {
-						$countfamiliesrejectqual[0] += $rejectquality[0];
-						$countfamiliesrejectqual[1] += $rejectquality[1];
-						if ($debugmode >= 2) { print STDOUT "rejecting b/c of GQ/DP\n"; }			## DEBUG
+						if ($debugmode >= 2) { print STDOUT "rejecting b/c not enough matches in family\n"; }			## DEBUG
 					}
-				} else {
-					if ($debugmode >= 2) { print STDOUT "rejecting b/c not enough matches in family\n"; }			## DEBUG
 				}
 			}
 		}
@@ -369,8 +352,8 @@ while ( <$input_filehandle> ) {
 		if ($countfamiliesmatchmodel > 0) {
 			$countvariantsmatchmodel++;
 		}
-		$count_dpexclude += $countfamiliesrejectqual[0];
-		$count_qualexclude += $countfamiliesrejectqual[1];
+		# $count_dpexclude += $countfamiliesrejectqual[0];
+		# $count_qualexclude += $countfamiliesrejectqual[1];
 
 		if ($debugmode >= 3) { print STDOUT scalar(keys %matchingfamilyunits)." family units and ".scalar(keys %matchingfamilies)." families out of ".scalar(keys %checkfamilies)." families of some type have a hit at $gene:$pos\n"; }			## DEBUG
 		if ((scalar(keys %matchingfamilyunits)+scalar(keys %matchingfamilies)) > 0) {
@@ -461,9 +444,8 @@ print $log_filehandle "\tN=$countcommonvariants are common variants\n";
 print $log_filehandle "\tN=$count_variants_excluded_gatk based on GATK filter\n";
 print $log_filehandle "\tN=$count_variants_excluded_function based on functional annotation\n";
 
-
 print $log_filehandle "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
-print $log_filehandle "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
+# print $log_filehandle "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
 print $log_filehandle "\tN=$count_notunique excluded because they were not unique within this dataset\n";
 close $log_filehandle;
  
@@ -530,20 +512,20 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 			if (ref($familyhits) eq 'HASH') {
 				if ($debugmode >= 1) { print STDOUT "Counting hits in each individual in $familyid\n"; }	
 				my $counthitsinfamily = 0;
+				my $countparentswithdata = 0;
 				my @familymembers = keys %{$familyhits};
 				foreach my $member (@familymembers) {
 					if ($debugmode >= 1) { print STDOUT "${$familyhits}{$member} hit(s) in $member\n"; }	
 					if ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {
 						$counthitsinfamily++;
+					} elsif ($member eq 'mother' || $member eq 'father') {
+						$countparentswithdata++;
 					}
 				}
-
-				if ($debugmode >= 1) { print STDOUT "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }	
-				
-				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1) {
-					# $counthitsinfamily += 2;
+				if ($debugmode >= 1) { print STDOUT "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }		
+				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1 && $counthitsinfamily>=1) {
 					if ($debugmode >= 3) { print STDOUT "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
-					if ($counthitsinfamily+$maxmissesperfamily+2 >= scalar(@familymembers)) {
+					if ($counthitsinfamily+$countparentswithdata+$maxmismatchesperfamily >= scalar(@familymembers)) {
 						$countfamiliesmatch++;
 					}
 				}
@@ -571,7 +553,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 
 sub checkandstoreOptions {
 	my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode) = @_;
 	my (%allowedGATKfilters, %GVStoexclude);
 	
@@ -587,8 +569,8 @@ sub checkandstoreOptions {
 		optionUsage("option --GATKkeep not defined\n");
 	} elsif (!defined $isNhit) {
 		optionUsage("option --N not defined\n");
-	} elsif (!defined $maxmissesperfamily) {
-		optionUsage("option --maxmissesperfamily not defined\n");
+	} elsif (!defined $maxmismatchesperfamily) {
+		optionUsage("option --maxmismatchesperfamily not defined\n");
 	}
 	if ($isNhit ne 'hit' && $isNhit ne 'nohit') {
 		optionUsage("option --N defined but not valid (should be 'hit' or 'nohit')\n");
@@ -598,7 +580,7 @@ sub checkandstoreOptions {
 	# 	$minGQ = 0;
 	# } else {
 		if (!defined $mindp) {
-			$mindp = 10;
+			$mindp = 8;
 		}
 		if (!defined $minGQ) {
 			$minGQ = 30;
@@ -641,15 +623,15 @@ sub checkandstoreOptions {
 	
 	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmissesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode, \%allowedGATKfilters, \%GVStoexclude, $logfile);
 }
 
 sub printParamstoLog {
-	my ($log_filehandle, $minhits, $maxmissesperfamily, $mindp, $minGQ, $isNhit, $gvstoexclude_string, $allowedgatk_string, $mafcutoff, $cmgfreqcutoff, $inheritmodel) = @_;
+	my ($log_filehandle, $minhits, $maxmismatchesperfamily, $mindp, $minGQ, $isNhit, $gvstoexclude_string, $allowedgatk_string, $mafcutoff, $cmgfreqcutoff, $inheritmodel) = @_;
 
 	print $log_filehandle "Requiring hits in gene in at least $minhits subjects/families\n";
-	print $log_filehandle "Allowing up to $maxmissesperfamily subjects per family to not have the correct genotype\n";
+	print $log_filehandle "Allowing up to $maxmismatchesperfamily subjects per family to not have the correct genotype\n";
 	# if (@dpcolumns && @qualcolumns) {
 		print $log_filehandle "Genotypes require at least $mindp depth and at least $minGQ qual, otherwise genotype set to be missing\n";
 	# } else {
@@ -816,6 +798,16 @@ sub checkGenoMatch {
 		# print STDOUT "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
 	# }
 	return $ismatch;
+}
+
+sub failsCallQuality {
+	my $qualityvalues = $_[0];
+	
+	my $return = 0;
+	if ($qualityvalues =~ m/DP/i || $qualityvalues =~ m/GQ/i) {
+		$return = 1;
+	}
+	return $return;
 }
 
 sub determineGenoType {
@@ -1125,15 +1117,17 @@ sub optionUsage {
 	print "\t--out\toutput file\n";
 	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
-	print "\t--maxmissesperfamily\tmax number of probands with genotypes not matching model in each family unit\n";
+	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
+	print "\t--maxmismatchesperfamily\tmax number of subjects per family with genotypes not matching model\n";
 	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all' or 'default')\n";
 	print "\t\tdefault=PASS\n";
-	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default', or 'NA'\n";
 		print "\t\tdefault=intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none\n";
 	print "\t--model\toptional: ('compoundhet' if compound het model desired, 'unique' if filtering for de novo unique; otherwise don't specify this option at all)\n";
 	print "\t--mafcutoff\toptional: (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
 	print "\t--errorcutoff\toptional: (cutoff frequency for filtering out systematic errors based on frequency in all CMG exomes to date)\n";
+	print "\t--dp\toptional: minimum DP for subject genotype to be counted; otherwise considered missing (default: 8)\n";
+	print "\t--gq\toptional: minimum GQ for subject genotype to be counted; otherwise considered missing (default: 30)\n";
 	die;
 }
 
