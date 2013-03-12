@@ -1,7 +1,11 @@
-chrom	position	type	referenceBase	alternateBase	filterFlagGATK	geneList	rsID	createBuild	functionGVS	aminoAcids	proteinPosition	scorePhastCons	consScoreGERP	polyPhen	UWExSNP	UWExTotal	40020	40022	40023	40024	40026	40028	40029	40030	40031	PrctFreqinCMG	PrctFreqinOutsidePop	FamilieswHits
-3	3	SNP	C	T	PASS	FAKECMPHET	0	0	missense	VAL/MET	313/353	0.974	3.02	unknown	0	1537	Y	Y	Y	Y	Y	C	C	C	Y	0	0	4;1;3;7;2;5
-3	4	SNP	G	A	PASS	FAKECMPHET	0	0	missense	VAL/MET	313/353	0.974	3.02	unknown	0	1537	R	R	R	R	R	G	G	G	R	0	0	4;1;3;7;2;5
-2	2	SNP	C	T	PASS	FAKEDENOVO	0	0	missense	VAL/MET	313/353	0.974	3.02	unknown	0	1537	Y	Y	Y	Y	Y	C	C	C	Y	0	0	4;1;3;7;2;5
-1	1	SNP	C	T	PASS	FAKEDOM	0	0	missense	THR/MET	135/402	0.348	-0.762	unknown	0	1536	C	C	C	C	C	Y	Y	C	C	0	0	6
-1	2	SNP	C	T	PASS	FAKEDOM	0	0	missense	VAL/MET	313/353	0.974	3.02	unknown	0	1537	Y	Y	Y	Y	Y	C	C	C	Y	0	0	4;1;3;7;2;5
-3	1	SNP	C	T	PASS	FAKECMPHET-FAM	0	0	missense	THR/MET	135/402	0.348	-0.762	unknown	0	1536	C	C	C	C	C	Y	Y	C	C	0	0	6
+chrom	position	type	referenceBase	alternateBase	filterFlagGATK	geneList	functionGVS	aminoAcids	proteinPosition	CHILD	FATHER	MOTHER	PROBAND2	PrctFreqinCMG	PrctFreqinOutsidePop	FamilieswHits
+2	2	SNP	C	T	PASS	FAKEDENOVO	missense	VAL/MET	313/353	C	C	C	Y	0	0	7
+1	2	SNP	C	T	PASS	FAKEDOM	missense	VAL/MET	313/353	C	C	C	Y	0	0	7
+1	1	SNP	C	T	PASS	FAKEDOM-FAM	missense	THR/MET	135/402	Y	Y	C	C	0	0	FAMILY
+3	1	SNP	C	T	PASS	FAKECMPHET-FAM	missense	THR/MET	135/402	Y	Y	C	C	0	0	FAMILY
+3	1	SNP	C	T	PASS	FAKECMPHET-FAM-lowDP	missense	THR/MET	135/402	Y	Y	C	C	0	0	FAMILY
+3	3	SNP	C	T	PASS	FAKECMPHET	missense	VAL/MET	313/353	C	C	C	Y	0	0	7
+3	4	SNP	G	A	PASS	FAKECMPHET	missense	VAL/MET	313/353	G	G	G	R	0	0	7
+X	1	SNP	C	T	PASS	FAKECMPHET-FAM-X	missense	THR/MET	135/402	Y	T	C	C	0	0	FAMILY
+3	3	SNP	C	T	PASS	FAKECMPHET-lowDP	missense	VAL/MET	313/353	C	C	C	Y	0	0	7
+3	4	SNP	G	A	PASS	FAKECMPHET-lowDP	missense	VAL/MET	313/353	G	G	G	R	0	0	7

@@ -1,31 +1,25 @@
 input=TESTDATA.SSAnnotation.tsv
 output=testout.homozygrec.tsv
 subjectreq=homozygrec.subjectreq
-1	40020	0	0	2	child	alt
-2	40022	0	0	2	child	alt
-3	40023	0	0	2	child	alt
-4	40024	0	0	2	child	alt
-5	40026	0	0	2	child	alt
-6	40028	40029	40030	2	child	alt
-6	40029	0	0	1	father	het
-6	40030	0	0	2	mother	het
-7	40031	0	0	2	child	alt
-
-File contains frequencies in outside populations and frequency observed in other CMG subjects
 Requiring hits in gene in at least 1 subjects/families
 Allowing up to 0 subjects per family to not have the correct genotype
-Per-sample depth and quality information not available
+Genotypes require at least 10 depth and at least 30 qual, otherwise genotype set to be missing
 Missing genotypes/no calls are counted as: hit
 Excluding all variants with annotations: intergenic
 Only allow variants with GATK filter: PASS LowQual SBFilter SnpCluster QUALFilter QDFilter ABFilter HRunFilter
 Excluding variants with MAF>.01 in ESP and/or 1000 Genomes
 Excluding variants with frequency>=.2 in CMG subjects (likely systematic error)
 Special analysis? NA
+FAMILY	CHILD	FATHER	MOTHER	2	child	alt
+FAMILY	FATHER	0	0	1	father	het
+FAMILY	MOTHER	0	0	2	mother	het
+7	PROBAND2	0	0	2	child	alt
+
 
 Results summary:
-In 1 gene(s), identified 2 variants
-Total 12 variants in input
-Total 12 variants from input examined after excluding 0:
+In 2 gene(s), identified 2 variants
+Total 22 variants in input
+Total 22 variants from input examined after excluding 0:
 	N=0 are systematic errors
 	N=0 are common variants
 	N=0 based on GATK filter

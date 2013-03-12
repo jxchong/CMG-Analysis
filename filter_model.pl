@@ -55,7 +55,7 @@ if ($inputfile =~ /\.gz$/) {
 }
 print STDOUT "Reading in genotypes from $inputfile\n";
 
-my $countskipheaderlines;
+my $countskipheaderlines = 0;
 my ($vcfGQcol, $vcfDPcol, $vcfGTcol);
 my $headerline;
 if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of the file
@@ -70,6 +70,7 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 } else {
 	$headerline = <$input_filehandle>;
 }
+
 if ($debugmode >= 1) {
 	print STDOUT "$countskipheaderlines lines skipped in header\n";
 }
@@ -113,6 +114,10 @@ while ( <$input_filehandle> ) {
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
 	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside);
 	
+	if ($debugmode >= 3) {
+		print STDOUT "\n";
+	}
+	
 	if ($inputfiletype eq 'SeattleSeqAnnotation') {
 		# parse_SeattleSeqAnnotation134_byline();
 	} elsif ($inputfiletype eq 'SSAnnotation') {
@@ -121,13 +126,13 @@ while ( <$input_filehandle> ) {
 		$freqinOutside = $line[$freqinOutsidecol];
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
-		if ($debugmode >= 4) {
-			if ($chr < 2) {
-				next;
-			} elsif ($chr > 2) {
-				last;
-			}			
-		}
+		# if ($debugmode >= 4) {
+		# 	if ($chr < 2) {
+		# 		next;
+		# 	} elsif ($chr > 2) {
+		# 		last;
+		# 	}			
+		# }
 		if ($debugmode >= 3) {
 			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";
 		}
@@ -175,7 +180,7 @@ while ( <$input_filehandle> ) {
 	}
 
 	if ($iserror==0 && $iscommon==0 && $resultfunctionfilter==0 && ($filterset eq 'NA' || $resultGATKfilter==1)) {
-		if ($debugmode >= 2) { print STDOUT "\nvariant at $chr:$pos in $gene passes initial filters\n"; }			## DEBUG
+		if ($debugmode >= 2) { print STDOUT "variant at $chr:$pos in $gene passes initial filters\n"; }			## DEBUG
 		$count_examined_variants++;
 		my %checkfamilies;
 		my %typeofgeno_all;
@@ -250,11 +255,12 @@ while ( <$input_filehandle> ) {
 		my %matchingfamilyunits;
 		while (my ($familyid, $thisfamily_ref) = each %checkfamilies) {						# for each family, check if genotype for each family member matches model
 			my %thisfamily = %{$thisfamily_ref};											# storage for whether genotype matches expectations (either 1 or 0 for match or no match)
-			my $thisfamilymatch = 0;
+			my $thisfamilykidsmatch = 0;
+			my $thisfamilyparentsmatch = 0;
 			my $familysize = grep { $thisfamily{$_} != -1 } keys %thisfamily;	
-			my @rejectquality = (0,0);
+			my @rejectquality = (0,0,0);
 			my $nparentswithdata = (defined $thisfamily{'father'}) + (defined $thisfamily{'mother'});
-			
+			my $nkidswithdata = $familysize-$nparentswithdata;
 			if ($inheritmodel =~ 'compoundhet') {		
 				if (!defined $thisfamily{'father'}) { 
 					$thisfamily{'father'} = 'NA';
@@ -266,13 +272,21 @@ while ( <$input_filehandle> ) {
 				if ($debugmode >= 3) { print STDOUT "family=$familyid parent matches = $thisfamily{'father'} + $thisfamily{'mother'}\n"; }
 				my @familymembers = @{$countuniquefamilies_hash{$familyid}};
 				foreach my $member (@familymembers) {
-					if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
-						$rejectquality[0] = 1;															# store whether someone failed the DP filter
-					} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
-						$rejectquality[1] = 1;															# store whether someone failed the GQ filter
-					}
+					if ($qualityflags{$familyid}{$member} =~ m/DP/i || $qualityflags{$familyid}{$member} =~ m/GQ/i) {
+						$rejectquality[2] += 1;																# store number of people who failed either the DP or GQ filter
+						if ($qualityflags{$familyid}{$member} =~ m/DP/i) {
+							$rejectquality[0] += 1;															# store whether someone failed the DP filter
+						} elsif ($qualityflags{$familyid}{$member} =~ m/GQ/i) {
+							$rejectquality[1] += 1;															# store whether someone failed the GQ filter
+						}
+					} 
+					
 					if ($member ne 'mother' && $member ne 'father' && $thisfamily{$member} == 1) {
-						$thisfamilymatch += 1;																# only counts matches in the kids
+						$thisfamilykidsmatch += 1;																	# counts matches in the kids
+						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
+					}
+					if (($member eq 'mother' || $member eq 'father') && $thisfamily{$member} == 1) {
+						$thisfamilyparentsmatch += 1;																# counts matches in the parents
 						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
 					}
 				}
@@ -281,37 +295,50 @@ while ( <$input_filehandle> ) {
 				if ($matchsubj eq 'reject') {
 					if ($debugmode >=4) { print STDOUT "reject\n"; }
 					next;							# skip to evaluation of next family; doesn't match inheritance model
-				}
-				if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilymatch genotype matches vs $familysize members and $nparentswithdata parents with genotype data\n"; }
-				if (($thisfamilymatch+$maxmissesperfamily) == ($familysize-$nparentswithdata)) {					# if all affected children have at least one hit
-					$countfamiliesmatchmodel++;
-					if (($rejectquality[0]+$rejectquality[1]) == 0 || $isNhit eq 'hit') {
-						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, the variant comes from $matchsubj and all members pass the GQ/DP check\n"; }
-						$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
-						foreach my $member (@familymembers) {
-							$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
+				} else {
+					if ($debugmode >= 3) { print STDOUT "in family=$familyid, there are $thisfamilykidsmatch+$thisfamilyparentsmatch matches out of $familysize genotypes; $thisfamilyparentsmatch/$nparentswithdata parents match; $rejectquality[2] genotypes in family have low DP/GQ\n"; }
+					if (    ($thisfamilyparentsmatch==0 && $thisfamilykidsmatch+$maxmissesperfamily>=$familysize) 
+					     || ($inheritmodel =~ 'compoundhet' && $thisfamilyparentsmatch==1 && $thisfamilykidsmatch+($thisfamilyparentsmatch+1)+$maxmissesperfamily>=$familysize)
+						 || ($inheritmodel eq 'compoundhetmosaic' && $thisfamilyparentsmatch==2 && $thisfamilykidsmatch+$thisfamilyparentsmatch+$maxmissesperfamily>=$familysize) 
+						 ) {		
+								## Note to self: under compoundhet model, if parents are available, one parent will not match at the site
+						$countfamiliesmatchmodel++;
+						my $pass = 0;
+						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit at $gene:$pos, variant comes from $matchsubj; enough members ($thisfamilykidsmatch+$thisfamilyparentsmatch, $maxmissesperfamily allowed misses) have hits\n"; }
+						if ($rejectquality[2] == 0) {			# now deal with whether or not it passes DP/GQ
+							$pass = 1;
+						} else { # if ($isNhit eq 'hit') {
+							# isNhit maybe is not so useful in combination with $maxmissesperfamily????  yes it is; if genotype is confidently WRONG, then that is different than not called
+   						 	if ($thisfamilyparentsmatch==1 && $thisfamilykidsmatch+($thisfamilyparentsmatch+1)-$rejectquality[2]+$maxmissesperfamily>=$familysize || ($inheritmodel eq 'compoundhetmosaic' && $thisfamilyparentsmatch==2 && $thisfamilykidsmatch+$thisfamilyparentsmatch-$rejectquality[2]+$maxmissesperfamily>=$familysize)) {			# even though it fails DP/GQ, still count as a hit if it doesn't exceed the number of allowed misses
+   								$pass = 1;
+							} elsif ($thisfamilyparentsmatch==0 && $thisfamilykidsmatch+-$rejectquality[2]+$maxmissesperfamily>=$familysize) {
+								$pass = 1;
+							} 
 						}
-					} else {
-						$countfamiliesrejectqual[0] += $rejectquality[0];
-						$countfamiliesrejectqual[1] += $rejectquality[1];
-						if ($debugmode >= 3) { print STDOUT "family=$familyid has a hit in $gene:$pos, the variant comes from $matchsubj but all members do NOT pass the GQ/DP check\n"; }
-					}
+									
+						if ($pass == 1) {
+							$matchingfamilyunits{$familyid}{'source'} = $matchsubj;
+							foreach my $member (@familymembers) {
+								$matchingfamilyunits{$familyid}{$member} = $thisfamily{$member};
+							}
+						} else {
+							if ($debugmode >= 3) { print STDOUT "fails the GQ/DP check\n"; }
+							$countfamiliesrejectqual[0] += $rejectquality[0];
+							$countfamiliesrejectqual[1] += $rejectquality[1];
+							if ($debugmode >= 3) { print STDOUT "rejecting family=$familyid, not enough members ($thisfamilykidsmatch+$thisfamilyparentsmatch) hit at $gene:$pos\n"; }
+						}
+					} 
 				}
 			} else {
-				my $countparentmatches = 0;
-				my $nparents = 0;
-				my $nkids = 0;
 				while (my ($relation, $thismatch) = each %thisfamily) {
 					if ($thismatch != -1) {
 						if ($relation eq 'father' || $relation eq 'mother') {
-							$nparents++;
 							if ($thismatch == 1) {
-								$countparentmatches++;
+								$thisfamilyparentsmatch++;
 							}
-						} 
-						
-						$thisfamilymatch += $thismatch;									
-
+						} else {
+							$thisfamilykidsmatch += $thismatch;									
+						}
 						if ($qualityflags{$familyid}{$relation} =~ m/DP/i) {
 							$rejectquality[0] = 1;
 						} elsif ($qualityflags{$familyid}{$relation} =~ m/GQ/i) {
@@ -320,12 +347,11 @@ while ( <$input_filehandle> ) {
 					}
 				}
 				
-				$nkids = $familysize - $nparents;
-				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilymatch (including $countparentmatches matches from the parents) individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily miss among the $nkids kids\n"; }
-
-				if ($thisfamilymatch == $familysize || ($familysize>=2 && $maxmissesperfamily>0 && $countparentmatches==$nparents && ($nkids-($thisfamilymatch-$countparentmatches)) <= $maxmissesperfamily)) {
+				if ($debugmode >= 3) { print STDOUT "family=$familyid has $thisfamilykidsmatch+$thisfamilyparentsmatch matching individuals out of $familysize matching the desired genotype, allowing only $maxmissesperfamily misses\n"; }
+				if (($thisfamilyparentsmatch+$thisfamilykidsmatch) == $familysize || ($familysize>=2 && ($maxmissesperfamily+$thisfamilyparentsmatch+$thisfamilykidsmatch) >= $familysize)) {
 					$countfamiliesmatchmodel++;
-					if (($rejectquality[0]+$rejectquality[1]) == 0 || $isNhit eq 'hit') {
+					# if all genotypes good quality OR we don't care about quality OR we have enough matches after allowing for bad quality calls
+					if ($rejectquality[2] == 0 || $isNhit eq 'hit' || $maxmissesperfamily+$thisfamilyparentsmatch+$thisfamilykidsmatch-$rejectquality[2] >= $familysize) {
 						$countfamiliesmatchmodel += 1;
 						$matchingfamilies{$familyid} = 1;
 					} else {
@@ -855,8 +881,11 @@ sub selectRefAlt {
 sub determineMatchSubject {
 	my ($fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno) = @_;
 	my $matchsubj = 'reject';
+	if (!defined $fathertypeofgeno) { $fathertypeofgeno = 'N'; }
+	if (!defined $mothertypeofgeno) { $mothertypeofgeno = 'N'; }
+	if (!defined $requiredcarrier) { $requiredcarrier = 'N'; }
 	if ($debugmode >= 4) {
-		print STDOUT "determineMatchSubject(): $fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno\n";
+		print STDOUT "determineMatchSubject: $fatherismatch, $motherismatch, $inheritmodel, $requiredcarrier, $fathertypeofgeno, $mothertypeofgeno\n";
 	}
 	if ("$fatherismatch$motherismatch" !~ 'NA' && "$fathertypeofgeno$mothertypeofgeno" !~ 'N') {											# if both parents have genotypes
 		### if ($fatherismatch+$motherismatch) == 2, then both parents would be carriers for the same rare mutation?!, in which case it would be homozygous recessive not compound het; just very very unlikely
@@ -907,6 +936,9 @@ sub determineMatchSubject {
 	
 	# need to think about this more but I think a compound het + mosaic model only matters if both parents were sequenced
 	# if one or neither parent was sequenced, can filter with other inheritance models that look identical
+	if ($debugmode >= 4) {
+		print STDOUT "determineMatchSubject: matchsubj=$matchsubj\n";
+	}
 	return $matchsubj;
 }
 sub determinevartype {

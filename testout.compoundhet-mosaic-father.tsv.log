@@ -1,35 +1,29 @@
 input=TESTDATA.SSAnnotation.tsv
 output=testout.compoundhet-mosaic-father.tsv
 subjectreq=compoundhet-mosaic.subjectreq
-1	40020	0	0	2	child	het
-2	40022	0	0	2	child	het
-3	40023	0	0	2	child	het
-4	40024	0	0	2	child	het
-5	40026	0	0	2	child	het
-6	40028	40029	40030	2	child	het
-6	40029	0	0	1	father	ref
-6	40030	0	0	2	mother	het
-7	40031	0	0	2	child	het
-
-File contains frequencies in outside populations and frequency observed in other CMG subjects
 Requiring hits in gene in at least 1 subjects/families
 Allowing up to 0 subjects per family to not have the correct genotype
-Per-sample depth and quality information not available
+Genotypes require at least 10 depth and at least 30 qual, otherwise genotype set to be missing
 Missing genotypes/no calls are counted as: hit
 Excluding all variants with annotations: intergenic
 Only allow variants with GATK filter: PASS LowQual SBFilter SnpCluster QUALFilter QDFilter ABFilter HRunFilter
 Excluding variants with MAF>.01 in ESP and/or 1000 Genomes
 Excluding variants with frequency>=.2 in CMG subjects (likely systematic error)
 Special analysis? compoundhetmosaic
+FAMILY	CHILD	FATHER	MOTHER	2	child	het
+FAMILY	FATHER	0	0	1	father	ref
+FAMILY	MOTHER	0	0	2	mother	het
+7	PROBAND2	0	0	2	child	het
+
 
 Results summary:
-In 2 gene(s), identified 4 variants
-Total 12 variants in input
-Total 12 variants from input examined after excluding 0:
+In 3 gene(s), identified 6 variants
+Total 22 variants in input
+Total 22 variants from input examined after excluding 0:
 	N=0 are systematic errors
 	N=0 are common variants
 	N=0 based on GATK filter
 	N=0 based on functional annotation
-Filtered out candidate hits from list of 8 variants matching inheritance model:
-	N=0 variants excluded based on DP; N=0 variants based on GQ
+Filtered out candidate hits from list of 15 variants matching inheritance model:
+	N=3 variants excluded based on DP; N=0 variants based on GQ
 	N=0 excluded because they were not unique within this dataset

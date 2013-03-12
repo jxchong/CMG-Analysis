@@ -1,9 +1,4 @@
-1	40020	0	0	2	child	het
-2	40022	0	0	2	child	het
-3	40023	0	0	2	child	het
-4	40024	0	0	2	child	het
-5	40026	0	0	2	child	het
-6	40028	40029	40030	2	child	het
-6	40029	0	0	1	father	het
-6	40030	0	0	2	mother	ref
-7	40031	0	0	2	child	het
+FAMILY	CHILD	FATHER	MOTHER	2	child	het
+FAMILY	FATHER	0	0	1	father	het
+FAMILY	MOTHER	0	0	2	mother	ref
+7	PROBAND2	0	0	2	child	het
