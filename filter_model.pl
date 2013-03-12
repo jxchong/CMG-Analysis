@@ -648,15 +648,24 @@ sub printParamstoLog {
 sub readPedigree {
 	my ($subjectdeffile, $log_filehandle) = @_;
 	my (%countuniquefamilies_hash, @orderedsubjects, %subjects);
+	my %validvalues = (1 => 1, 2 => 1, -9 => 1, 0 => 1);
 	
 	########## Order of subjects in this file must correspond to order of genotype columns
 	open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 	while (<SUBJECTS>) {
 		$_ =~ s/\s+$//;					# Remove line endings
 		print $log_filehandle "$_\n";
-		my ($familyid, $subjectid, $father, $mother, $sex, $relation, $desiredgeno) = split("\t", $_);
+		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split("\t", $_);
 		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
 			print $log_filehandle "$familyid\t$subjectid has an illegal desired genotype ($desiredgeno)\n";
+			die;
+		}
+		if (!defined $validvalues{$phenotype}) {
+			print $log_filehandle "$familyid\t$subjectid has an illegal phenotype value ($phenotype)\n";
+			die;
+		}
+		if (!defined $validvalues{$sex}) {
+			print $log_filehandle "$familyid\t$subjectid has an illegal sex value ($sex)\n";
 			die;
 		}
 		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
@@ -1115,7 +1124,7 @@ sub optionUsage {
 	print "perl $0 \n";
 	print "\t--in\tinput file\n";
 	print "\t--out\toutput file\n";
-	print "\t--subjectreq\tpedigree-like file listing families and required subject genotypes\n";
+	print "\t--subjectreq\tpedigree file (first 6 columns: family,subject,father,mother,sex,phenotype) listing families and required subject genotypes\n";
 	print "\t--minhits\tminimum number of families/individuals with hits\n";
 	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
 	print "\t--maxmismatchesperfamily\tmax number of subjects per family with genotypes not matching model\n";
