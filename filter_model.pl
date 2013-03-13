@@ -10,7 +10,9 @@
 use strict;
 use warnings;
 use Getopt::Long;
+use Pod::Usage;
 
+my $help = 0;
 my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
@@ -28,7 +30,10 @@ GetOptions(
 	'dp:f' => \$mindp,
 	'gq:f' => \$minGQ,
 	'debug:i' => \$debugmode,
-);
+	'help|?' => \$help,
+) or pod2usage(-verbose => 1) && exit;
+pod2usage(-verbose=>1, -exitval=>1) if $help;
+
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
 	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
@@ -64,7 +69,7 @@ if ($inputfile =~ m/\.vcf/) {						# skip all the metadata lines at the top of t
 		$countskipheaderlines++;
 		next if ($headerline !~ "#CHROM");
 		$headerline =~ s/\s+$//;					# Remove line endings
-		my @header = split("\t", $headerline);
+		my @header = split("	", $headerline);
 		last;
 	}
 } else {
@@ -76,7 +81,7 @@ if ($debugmode >= 1) {
 }
 
 $headerline =~ s/\s+$//;					# Remove line endings
-my @header = split("\t", $headerline);
+my @header = split("	", $headerline);
 my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
 my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref) = parseHeader(@header);
 my @genotypecolumns = @{$genotypecolumns_ref};
@@ -91,12 +96,12 @@ if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 
 ###################### PRINT HEADER FOR OUTPUT #############################
 if ($inputfiletype ne 'vcf') {
-	print $output_filehandle join("\t", @header[@keepcolumns])."\tFamilieswHits\n";
+	print $output_filehandle join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "chr\tpos\ttype\tref\talt\tGATKflag\tgeneList\trsID\tfunctionGVS\taminoacids\tproteinPos\tcDNAPos\tPhastCons\tGERP\tPrctAltFreqinCMG\tPrctAltFreqOutside\t";
-	print $output_filehandle join("Gtype\t", @orderedsubjects)."Gtype\t";
-	print $output_filehandle join("DP\t", @orderedsubjects)."DP\t";
-	print $output_filehandle join("GQ\t", @orderedsubjects)."GQ\tFamilieswHits\n";
+	print $output_filehandle "chr	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	PrctAltFreqinCMG	PrctAltFreqOutside	";
+	print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
+	print $output_filehandle join("DP	", @orderedsubjects)."DP	";
+	print $output_filehandle join("GQ	", @orderedsubjects)."GQ	FamilieswHits\n";
 }
 
 
@@ -108,7 +113,7 @@ while ( <$input_filehandle> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	$countinputvariants++;
 	
-	my @line = split ("\t", $_);
+	my @line = split ("	", $_);
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
@@ -359,9 +364,9 @@ while ( <$input_filehandle> ) {
 		if ((scalar(keys %matchingfamilyunits)+scalar(keys %matchingfamilies)) > 0) {
 			my $data;
 			if ($inputfiletype ne 'vcf') {
-				$data = join("\t", @line);
+				$data = join("	", @line);
 			} else {
-				$data = "$chr\t$pos\t$vartype\t$ref\t$alt\t$filterset\t$gene\t$rsid\t$functionimpact\t$aminoacids\t$proteinpos\t$cdnapos\t$phastcons\t$gerp\t$freqinCMG\t$freqinOutside\t".join("\t", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$freqinCMG	$freqinOutside	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -421,12 +426,12 @@ while (my ($gene, $results_ref) = each %genehits) {
 			
 			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
 	  		$countoutputvariants++;
-			my @hitvarinfoarray = split("\t", $hitvarinfo);
-	  		# print $output_filehandle "$hitvarinfo\t".join(";", @familyids)."\n";
+			my @hitvarinfoarray = split("	", $hitvarinfo);
+	  		# print $output_filehandle "$hitvarinfo	".join(";", @familyids)."\n";
 			if ($inputfiletype ne 'vcf') {
-				print $output_filehandle join("\t", @hitvarinfoarray[@keepcolumns])."\t".join(";", @familyids)."\n";
+				print $output_filehandle join("	", @hitvarinfoarray[@keepcolumns])."	".join(";", @familyids)."\n";
 			} else {
-				print $output_filehandle join("\t", @hitvarinfoarray)."\t".join(";", @familyids)."\n";
+				print $output_filehandle join("	", @hitvarinfoarray)."	".join(";", @familyids)."\n";
 			}
 	  	}
 	} else {
@@ -439,14 +444,14 @@ print $log_filehandle "\nResults summary:\n";
 print $log_filehandle "In $countgeneswhits gene(s), identified $countoutputvariants variants\n";
 print $log_filehandle "Total $countinputvariants variants in input\n";
 print $log_filehandle "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
-print $log_filehandle "\tN=$counterrorvariants are systematic errors\n";
-print $log_filehandle "\tN=$countcommonvariants are common variants\n";
-print $log_filehandle "\tN=$count_variants_excluded_gatk based on GATK filter\n";
-print $log_filehandle "\tN=$count_variants_excluded_function based on functional annotation\n";
+print $log_filehandle "	N=$counterrorvariants are systematic errors\n";
+print $log_filehandle "	N=$countcommonvariants are common variants\n";
+print $log_filehandle "	N=$count_variants_excluded_gatk based on GATK filter\n";
+print $log_filehandle "	N=$count_variants_excluded_function based on functional annotation\n";
 
 print $log_filehandle "Filtered out candidate hits from list of $countvariantsmatchmodel variants matching inheritance model:\n";
-# print $log_filehandle "\tN=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
-print $log_filehandle "\tN=$count_notunique excluded because they were not unique within this dataset\n";
+# print $log_filehandle "	N=$count_dpexclude variants excluded based on DP; N=$count_qualexclude variants based on GQ\n";
+print $log_filehandle "	N=$count_notunique excluded because they were not unique within this dataset\n";
 close $log_filehandle;
  
 
@@ -460,7 +465,7 @@ sub checkFamiliesvsModel {																										# sum up hits in each family
 	my %familieswHitsinGene;
 	foreach my $hit (@{$inputhitdata_ref}) {
 		my $hitvarinfo = ${$hit}[0];
-			my @thishit = split("\t", $hitvarinfo);
+			my @thishit = split("	", $hitvarinfo);
 		my %matchingfamilies = %{${$hit}[1]};
 		my %matchingfamilyunits = %{${$hit}[2]};
 
@@ -558,22 +563,22 @@ sub checkandstoreOptions {
 	my (%allowedGATKfilters, %GVStoexclude);
 	
 	if (!defined $inputfile) {
-		optionUsage("option --in not defined\n");
+		 pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --in not defined.\n")
 	} elsif (!defined $outputfile) {
-		optionUsage("option --out not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --out not defined\n");
 	} elsif (!defined $subjectdeffile) {
-		optionUsage("option --subjectreq not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --subjectreq not defined\n");
 	} elsif (!defined $minhits) {
-		optionUsage("option --minhits not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --minhits not defined\n");
 	} elsif (!defined $filters) {
-		optionUsage("option --GATKkeep not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --GATKkeep not defined\n");
 	} elsif (!defined $isNhit) {
-		optionUsage("option --N not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --N not defined\n");
 	} elsif (!defined $maxmismatchesperfamily) {
-		optionUsage("option --maxmismatchesperfamily not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --maxmismatchesperfamily not defined\n");
 	}
 	if ($isNhit ne 'hit' && $isNhit ne 'nohit') {
-		optionUsage("option --N defined but not valid (should be 'hit' or 'nohit')\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --N defined but not valid (should be 'hit' or 'nohit')\n");
 	}
 	# if ($isNhit eq 'hit') {
 	# 	$mindp = 0;
@@ -596,10 +601,10 @@ sub checkandstoreOptions {
 	if (!defined $inheritmodel) {
 		$inheritmodel = 'NA';
 	} elsif ($inheritmodel ne 'compoundhet' && $inheritmodel ne 'compoundhetmosaic' && $inheritmodel ne 'unique') {
-		optionUsage("option --model defined but not valid (should be compoundhet or compoundhetmosaic or unique)\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --model defined but not valid (should be compoundhet or compoundhetmosaic or unique)\n");
 	}
 	if (!defined $excludeGVSfunction) {
-		optionUsage("option --excludefunction not defined\n");
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --excludefunction not defined\n");
 	}
 	if (!defined $debugmode) {
 		$debugmode = 0;
@@ -655,17 +660,17 @@ sub readPedigree {
 	while (<SUBJECTS>) {
 		$_ =~ s/\s+$//;					# Remove line endings
 		print $log_filehandle "$_\n";
-		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split("\t", $_);
+		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split("	", $_);
 		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
-			print $log_filehandle "$familyid\t$subjectid has an illegal desired genotype ($desiredgeno)\n";
+			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 			die;
 		}
 		if (!defined $validvalues{$phenotype}) {
-			print $log_filehandle "$familyid\t$subjectid has an illegal phenotype value ($phenotype)\n";
+			print $log_filehandle "$familyid	$subjectid has an illegal phenotype value ($phenotype)\n";
 			die;
 		}
 		if (!defined $validvalues{$sex}) {
-			print $log_filehandle "$familyid\t$subjectid has an illegal sex value ($sex)\n";
+			print $log_filehandle "$familyid	$subjectid has an illegal sex value ($sex)\n";
 			die;
 		}
 		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
@@ -804,7 +809,7 @@ sub checkGenoMatch {
 		} 
 	}
 	# if ($debugmode >= 3) {
-		# print STDOUT "$vartype\tgeno=$genotype\tdesiredgeno=$desiredgeno\tref=$ref\talt=$alt\tgenoalleles=@alleles\tismatch=$ismatch\n";				# DEBUG
+		# print STDOUT "$vartype	geno=$genotype	desiredgeno=$desiredgeno	ref=$ref	alt=$alt	genoalleles=@alleles	ismatch=$ismatch\n";				# DEBUG
 	# }
 	return $ismatch;
 }
@@ -1118,25 +1123,104 @@ sub parse_SeattleSeqAnnotation134_byline {
 }
 
 
-sub optionUsage {
-	my $errorString = $_[0];
-	print "$errorString";
-	print "perl $0 \n";
-	print "\t--in\tinput file\n";
-	print "\t--out\toutput file\n";
-	print "\t--subjectreq\tpedigree file (first 6 columns: family,subject,father,mother,sex,phenotype) listing families and required subject genotypes\n";
-	print "\t--minhits\tminimum number of families/individuals with hits\n";
-	print "\t--N\thit or nothit (how should we count missing genotypes)\n";
-	print "\t--maxmismatchesperfamily\tmax number of subjects per family with genotypes not matching model\n";
-	print "\t--GATKkeep\tGATK quality filters that should be kept (comma-delimited with no spaces, or keep 'all' or 'default')\n";
-	print "\t\tdefault=PASS\n";
-	print "\t--excludefunction\tcomma separated list of GVS variant function classes to be excluded, or 'default', or 'NA'\n";
-		print "\t\tdefault=intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none\n";
-	print "\t--model\toptional: ('compoundhet' if compound het model desired, 'unique' if filtering for de novo unique; otherwise don't specify this option at all)\n";
-	print "\t--mafcutoff\toptional: (cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded; default 0.01)\n";
-	print "\t--errorcutoff\toptional: (cutoff frequency for filtering out systematic errors based on frequency in all CMG exomes to date)\n";
-	print "\t--dp\toptional: minimum DP for subject genotype to be counted; otherwise considered missing (default: 8)\n";
-	print "\t--gq\toptional: minimum GQ for subject genotype to be counted; otherwise considered missing (default: 30)\n";
-	die;
-}
+
+
+
+
+
+
+
+=head1 NAME
+
+
+filter_model.pl - filter annotated vcfs or SeattleSeq annotation files based on various Mendelian inheritance models
+
+
+=head1 SYNOPSIS
+
+
+perl B<filter_model.pl> I<[options]>
+
+
+=head1 ARGUMENTS
+
+
+=over 4
+
+=item B<--in> I<input file>	
+
+	input file (either vcf or SSAnnotation)
+
+=item B<--out> I<output file>
+
+	name of output file
+
+=item B<--subjectreq> I<pedigree file>
+
+	ped file for samples IN ORDER of appearance in input file
+	first 6 columns: family subject father mother sex phenotype
+
+=item B<--minhits> I<number>
+	
+	minimum number of families/individuals with hits
+	
+=item B<--N> I<hit/nohit>
+
+	how to treat missing genotypes
+		
+=item B<--maxmismatchesperfamily> I<number>
+
+	max number of subjects per family with genotypes not matching model
+
+=item B<--GATKkeep> I<list>
+
+	GATK quality filters that should be kept as possible hits
+	Possible values: comma-delimited list with no spaces OR 'all' OR 'default' (default=PASS,SBFilter,ABFilter)
+		
+=item B<--excludefunction> I<list>
+	
+	GVS variant function classes to be excluded
+	Possible values: comma separated list with no spaces OR 'default' (default=intron,intergenic,utr,utr-3,utr-5,near-gene-3,near-gene-5,none) OR 'NA'
+		
+=item B<--mafcutoff> I<value>
+
+	cutoff MAF for filtering out common variants using 1000 Genomes and/or ESP; any var with freq > cutoff is excluded
+	optional, default value = 0.01
+		
+=item B<--errorcutoff> I<value>
+
+	cutoff frequency for filtering out systematic errors based on frequency in all CMG exomes to date
+	optional, default value = 0.2
+
+=item B<--model> I<inheritance model>
+
+	optional, not necessary for homozygous recessive, dominant, de novo
+	Possible values: 'compoundhet' OR 'compoundhetmosaic' OR 'unique' if filtering for unique de novo mutations (never seen before and not recurrent)>
+
+=item B<--dp> I<number>
+
+	minimum DP for subject genotype; otherwise considered missing
+	optional, default=8
+		
+=item B<--gq> I<number>
+
+	minimum GQ for subject genotype; otherwise considered missing
+	optional, default=30
+
+=back
+
+
+=head1 CAVEATS
+
+
+xxx
+
+
+=head1 AUTHOR
+
+
+Jessica Chong (jxchong@uw.edu, jxchong@gmail.com)
+
+
+=cut
 
