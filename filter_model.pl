@@ -129,6 +129,9 @@ while ( <$input_filehandle> ) {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact) = parse_SSAnnotation134_byline(\@genotypecolumns, \@dpcolumns, \@qualcolumns, @line);
 		$freqinCMG = $line[$freqinCMGcol];		
 		$freqinOutside = $line[$freqinOutsidecol];
+		if ($debugmode >= 3) {
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
+		}
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
@@ -148,11 +151,11 @@ while ( <$input_filehandle> ) {
 	@subjectdps = @{$subjdps_ref};
 	@subjectquals = @{$subjquals_ref};
 	
-	# if ($debugmode >= 4) {
-	# 	print STDOUT "genotypes=@subjectgenotypes\n";
-	# 	print STDOUT "dps=@subjectdps\n";
-	# 	print STDOUT "GQs=@subjectquals\n";
-	# }
+	if ($debugmode >= 4) {
+		print STDOUT "genotypes=@subjectgenotypes\n";
+		print STDOUT "dps=@subjectdps\n";
+		print STDOUT "GQs=@subjectquals\n";
+	}
 	
 	# Print current chromosome being processed (for user knowledge)
 	if ($workingchr ne $chr) {
@@ -516,23 +519,20 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 		if ($inheritmodel =~ 'compoundhet') {
 			if (ref($familyhits) eq 'HASH') {
 				if ($debugmode >= 1) { print STDOUT "Counting hits in each individual in $familyid\n"; }	
-				my $counthitsinfamily = 0;
-				my $countparentswithdata = 0;
+				my ($counthitsinfamily, $countparentswithdata) = 0;
 				my @familymembers = keys %{$familyhits};
 				foreach my $member (@familymembers) {
 					if ($debugmode >= 1) { print STDOUT "${$familyhits}{$member} hit(s) in $member\n"; }	
 					if ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {
 						$counthitsinfamily++;
-					} elsif ($member eq 'mother' || $member eq 'father') {
-						$countparentswithdata++;
+					} elsif (($member eq 'mother' || $member eq 'father') && ${$familyhits}{$member} >= 1) {		# is this ok in a compoundhetmosaic model?
+						$counthitsinfamily++;
 					}
 				}
 				if ($debugmode >= 1) { print STDOUT "$counthitsinfamily hits in family vs ".scalar(@familymembers)." family members\n"; }		
-				if (${$familyhits}{'mother'} >= 1 && ${$familyhits}{'father'} >= 1 && $counthitsinfamily>=1) {
-					if ($debugmode >= 3) { print STDOUT "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
-					if ($counthitsinfamily+$countparentswithdata+$maxmismatchesperfamily >= scalar(@familymembers)) {
-						$countfamiliesmatch++;
-					}
+				if ($debugmode >= 3) { print STDOUT "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
+				if ($counthitsinfamily+$maxmismatchesperfamily >= scalar(@familymembers)) {
+					$countfamiliesmatch++;
 				}
 			} elsif (!ref($familyhits)) {																									
 				if ($familyhits >= 2) {
@@ -686,7 +686,7 @@ sub readPedigree {
 	print $log_filehandle "\n";
 	
 	if ($debugmode >= 1) {
-		print STDOUT "Read in $countuniquefamilies families from $subjectdeffile\n";
+		print STDOUT "Read in $countuniquefamilies families from $subjectdeffile: subject data order: @orderedsubjects\n";
 	}
 	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, $countuniquefamilies);
 }
@@ -1060,7 +1060,7 @@ sub parse_vcf_byline {
 		} elsif ($format[$i] eq 'AD') {
 			$pindel_ad = $i;
 		} elsif ($format[$i] eq 'DP4') {
-			# samtools singlesample calls will put depth info (DP4) in INFO column; need to move to FORMAT column for multisample vcf and this script
+			# samtools singlesample calls will put depth info (DP4) in INFO column; need to move to FORMAT column to create multisample vcf for this script to read
 			$dpcolnum = $i;
 			$altdp = 1;
 		}
@@ -1168,7 +1168,7 @@ perl B<filter_model.pl> I<[options]>
 
 	how to treat missing genotypes
 		
-=item B<--maxmismatchesperfamily> I<number>
+=item B<--maxmissesperfamily> I<number>
 
 	max number of subjects per family with genotypes not matching model
 
@@ -1213,7 +1213,7 @@ perl B<filter_model.pl> I<[options]>
 =head1 CAVEATS
 
 
-xxx
+When allowing missing (which includes N as well as low DP/GQ) genotypes to be hits, think hard about allowing misses to be matches (can end up with a lot of variants).
 
 
 =head1 AUTHOR

@@ -4,11 +4,12 @@ perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq homozygre
 
 
 perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet.subjectreq --minhits 1 --GATKkeep all --N hit --excludefunction intergenic --out testout.Nhit.compoundhet.tsv --mafcutoff .01 --errorcutoff .2 --model compoundhet --maxmissesperfamily 0
-
-
-perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet-mosaic.subjectreq --minhits 1 --GATKkeep all --N hit --excludefunction intergenic --out testout.Nhit.compoundhet-mosaic-father.tsv --mafcutoff .01 --errorcutoff .2 --maxmissesperfamily 0 --model compoundhetmosaic
-
+perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet.subjectreq --minhits 1 --GATKkeep all --N hit --excludefunction intergenic --out testout.Nhit.1miss.compoundhet.tsv --mafcutoff .01 --errorcutoff .2 --model compoundhet --maxmissesperfamily 1 --debug 4
 perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet.subjectreq --minhits 1 --GATKkeep all --N nohit --excludefunction intergenic --out testout.Nnohit.compoundhet.tsv --mafcutoff .01 --errorcutoff .2 --model compoundhet --maxmissesperfamily 0
+
+
+perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet-mosaic.subjectreq --minhits 1 --GATKkeep all --N hit --excludefunction intergenic --out testout.Nhit.1miss.compoundhet-mosaic-father.tsv --mafcutoff .01 --errorcutoff .2 --maxmissesperfamily 1 --model compoundhetmosaic
+
 
 
 perl ~/bin/filter_model.pl --in TESTDATA.SSAnnotation.tsv --subjectreq compoundhet-mosaic.subjectreq --minhits 1 --GATKkeep all --N nohit --excludefunction intergenic --out testout.Nnohit.compoundhet-mosaic-father.tsv --mafcutoff .01 --errorcutoff .2 --maxmissesperfamily 0 --model compoundhetmosaic

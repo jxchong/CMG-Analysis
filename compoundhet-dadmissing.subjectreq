@@ -1,4 +1,5 @@
-FAMILY	CHILD	0	MOTHER	2	child	het
-6	FATHER	0	0	1	child	het
-FAMILY	MOTHER	0	0	2	mother	het
-7	PROBAND2	0	0	2	child	het
+FAMILY	SIBLING	0	MOTHER	1	2	sibling	het
+FAMILY	CHILD	0	MOTHER	2	2	child	het
+6	FATHER	0	0	1	2	child	het
+FAMILY	MOTHER	0	0	2	1	mother	het
+7	PROBAND2	0	0	2	2	child	het
