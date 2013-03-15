@@ -400,7 +400,7 @@ close $input_filehandle;
 
 # Check putative hit list for all genes and count number of valid hits across all families
 print STDOUT "\nChecking all genes for desired number of hits in desired number of families\n";
-my $countgeneswhits = 0;
+my %geneswhits;
 my $countgenesrejectedhits = 0;
 my $countoutputvariants = 0;
 my $genecounter = 0;
@@ -420,7 +420,7 @@ while (my ($gene, $results_ref) = each %genehits) {
 	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
 	
 	if ($enoughfamilieshavehits == 1) {
-		$countgeneswhits++;
+		$geneswhits{$gene}++;
 	  	foreach my $hit (@hitdata) {
 	  		my $hitvarinfo = ${$hit}[0];
 			my %matchingfamilies = %{${$hit}[1]};
@@ -443,8 +443,11 @@ while (my ($gene, $results_ref) = each %genehits) {
 	}
 }
 
+my @genes = keys %geneswhits;
+my $countgeneswhits = scalar(@genes);
 print $log_filehandle "\nResults summary:\n";
-print $log_filehandle "In $countgeneswhits gene(s), identified $countoutputvariants variants\n";
+print $log_filehandle "In $countgeneswhits gene(s), identified $countoutputvariants variants.\n";
+print $log_filehandle "Genes: ".join(", ", @genes)."\n";
 print $log_filehandle "Total $countinputvariants variants in input\n";
 print $log_filehandle "Total $count_examined_variants variants from input examined after excluding $countexcludedvariants:\n";
 print $log_filehandle "	N=$counterrorvariants are systematic errors\n";
@@ -459,7 +462,8 @@ close $log_filehandle;
  
 
 
-print STDOUT "In $countgeneswhits gene(s), matched $countoutputvariants variants\n";
+print STDOUT "In $countgeneswhits gene(s), matched $countoutputvariants variants.\n";
+print STDOUT "Genes: ".join(", ", @genes)."\n";
 
 
 sub checkFamiliesvsModel {																										# sum up hits in each family
@@ -659,8 +663,11 @@ sub readPedigree {
 	open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 	while (<SUBJECTS>) {
 		$_ =~ s/\s+$//;					# Remove line endings
+		if ($_ =~ /^#/) {
+			next;						# skip header lines
+		}
 		print $log_filehandle "$_\n";
-		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split("	", $_);
+		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split(/[ \t]+/, $_);
 		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
 			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 			die;
@@ -706,9 +713,9 @@ sub parseHeader {
 		} elsif ($columnname =~ /Gtype/i) {
 			$columnname =~ s/Gtype//; 
 		}
-		if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
+		# if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
 			push(@keepcolumns, $i);
-		}
+		# }
 		if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
 			push(@genotypecolumns, $i);
 		}
@@ -1127,7 +1134,9 @@ sub parse_SeattleSeqAnnotation134_byline {
 
 
 
-
+################################################################################################################
+############################################ Documentation #####################################################
+################################################################################################################
 
 
 =head1 NAME
@@ -1159,6 +1168,8 @@ perl B<filter_model.pl> I<[options]>
 
 	ped file for samples IN ORDER of appearance in input file
 	first 6 columns: family subject father mother sex phenotype
+	7th column (temporary until I improve pedigree code): person's relationship in family (father, mother, child, etc).  Children must have distinct names (proband1, proband2, etc)
+	8th column: desired genotype given inheritance model
 
 =item B<--minhits> I<number>
 	
@@ -1208,6 +1219,18 @@ perl B<filter_model.pl> I<[options]>
 	optional, default=30
 
 =back
+
+
+=head1 DOCUMENTATION
+
+
+xx
+
+
+=head1 DESCRIPTION
+
+
+This script will filter genotypes for subjects from a vcf or SSAnnotation file and filter for variants matching a desired Mendelian inheritance model.  The inheritance model is specified in an extended pedigree-like file and with the --model argument.
 
 
 =head1 CAVEATS
