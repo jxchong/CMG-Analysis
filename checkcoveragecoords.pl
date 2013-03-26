@@ -110,7 +110,7 @@ xxx.pl -
 =head1 SYNOPSIS
 
 
-perl B<xxxx.pl> I<[options]>
+perl B<checkcoveragecoords.pl> I<[options]>
 
 
 =head1 ARGUMENTS
@@ -122,15 +122,15 @@ perl B<xxxx.pl> I<[options]>
 
 	if depth less than this value in at least one subject, alert
 
-=item B<--bed> I<coordinate file>	
+=item B<--bed> F<coordinate file>	
 
 	file of coordinates to fetch coverage for, in bed format
 
-=item B<--coverage> I<coverage file>	
+=item B<--coverage> F<coverage file>	
 
 	coverage input file
 
-=item B<--out> I<output file>
+=item B<--out> F<output file>
 
 	name of output file
 
@@ -154,7 +154,7 @@ xx
 =head1 DESCRIPTION
 
 
-xxxxxxxx
+Takes the standards UWCMG coverage.out file, optionally reformats it into a bgzip/tabix-indexable file, and given a UCSC BED-format file with coordinates, retrieves the per-subject depth for all positions between those coordinates.  Given a mindepth value, will count number of sites where at least one subject had a depth below that value.
 
 
 =head1 AUTHOR
