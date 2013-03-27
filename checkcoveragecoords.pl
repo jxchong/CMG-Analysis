@@ -45,7 +45,7 @@ if ($coveragefile =~ /all\.coverage\.out$/ && ! -e "$outputdir/$coveragestem.tsv
 	my $convertedfile = "$coveragestem.tsv.gz";
 	my $cmd = q/if ($F[0] eq "Locus") {print "Chr\tPos\t".join("\t", @F[1..$#F])."\n";} else { ($chr,$bp)=split(":", $F[0]); print "$chr\t$bp\t".join("\t", @F[1..$#F])."\n";}/;
 	print "Converting $coveragefile to $outputdir/$convertedfile\n";
-	if (!-e $outputdir/$convertedfile) {
+	if (!-e "$outputdir/$convertedfile") {
 		`perl -ane \'$cmd\' $coveragefile | bgzip > $outputdir/$convertedfile`;
 	}
 	print "Tabix indexing $outputdir/$convertedfile\n";
