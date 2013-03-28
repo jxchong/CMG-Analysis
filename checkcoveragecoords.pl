@@ -41,7 +41,7 @@ my @splitname = split("/", $coveragefile);
 my $coveragestem = $splitname[$#splitname];
 $coveragestem =~ s/\.out//;
 
-if ($coveragefile =~ /all\.coverage\.out$/ && ! -e "$outputdir/$coveragestem.tsv.gz") {
+if ($coveragefile =~ /all\.coverage\.out$/ && ! -e "$outputdir/$coveragestem.tsv.gz.tbi") {
 	my $convertedfile = "$coveragestem.tsv.gz";
 	my $cmd = q/if ($F[0] eq "Locus") {print "Chr\tPos\t".join("\t", @F[1..$#F])."\n";} else { ($chr,$bp)=split(":", $F[0]); print "$chr\t$bp\t".join("\t", @F[1..$#F])."\n";}/;
 	print "Converting $coveragefile to $outputdir/$convertedfile\n";
@@ -50,46 +50,47 @@ if ($coveragefile =~ /all\.coverage\.out$/ && ! -e "$outputdir/$coveragestem.tsv
 	}
 	print "Tabix indexing $outputdir/$convertedfile\n";
 	`tabix -s 1 -b 2 -e 2 $outputdir/$convertedfile`;
-} else {
-	open (my $output_handle, ">", "$outputdir/$outputfile") or die "Cannot write to $outputdir/$outputfile: $!.\n";	
-	my $headerline = `zcat $coveragestem.tsv.gz | head -1`;
-	$headerline =~ s/\s+$//;
-	my @header = split("\t", $headerline);
-	print $output_handle join("\t", @header[0..3])."\tName\tMin\tMax\t".join("\t", @header[4..$#header])."\n";
-	
-	open (my $input_handle, "$bedfile") or die "Cannot read $bedfile: $!.\n";
-	while ( <$input_handle> ) {
-		$_ =~ s/\s+$//;					# Remove line endings
-		my ($chr, $start, $stop, @bedline) = split(/\s+/, $_);
-		my @coveragedata = `tabix $coveragestem.tsv.gz $chr:$start-$stop\n`;
-		my ($countsites, $countbelowdepth) = (0,0);
-		foreach my $line (@coveragedata) {
-			$line =~ s/\s+$//;					# Remove line endings
-			$countsites++;
-			my @data = split("\t", $line);
-			my ($min, $max) = ($data[4], 0);
-			my $countsubjectsbelowdepth = 0;
-			for (my $i=4; $i<=$#data; $i++) {
-				if ($data[$i] < $min) { $min = $data[$i]; }
-				if ($data[$i] > $max) { $max = $data[$i]; }
-				if ($data[$i] < $mindepthval) {
-					$countsubjectsbelowdepth++;
-				}
+} 
+
+open (my $output_handle, ">", "$outputdir/$outputfile") or die "Cannot write to $outputdir/$outputfile: $!.\n";	
+my $headerline = `zcat $coveragestem.tsv.gz | head -1`;
+$headerline =~ s/\s+$//;
+my @header = split("\t", $headerline);
+print $output_handle join("\t", @header[0..3])."\tName\tMin\tMax\t".join("\t", @header[4..$#header])."\n";
+
+open (my $input_handle, "$bedfile") or die "Cannot read $bedfile: $!.\n";
+while ( <$input_handle> ) {
+	$_ =~ s/\s+$//;					# Remove line endings
+	my ($chr, $start, $stop, @bedline) = split(/\s+/, $_);
+	my @coveragedata = `tabix $coveragestem.tsv.gz $chr:$start-$stop\n`;
+	my ($countsites, $countbelowdepth) = (0,0);
+	foreach my $line (@coveragedata) {
+		$line =~ s/\s+$//;					# Remove line endings
+		$countsites++;
+		my @data = split("\t", $line);
+		my ($min, $max) = ($data[4], 0);
+		my $countsubjectsbelowdepth = 0;
+		for (my $i=4; $i<=$#data; $i++) {
+			if ($data[$i] < $min) { $min = $data[$i]; }
+			if ($data[$i] > $max) { $max = $data[$i]; }
+			if ($data[$i] < $mindepthval) {
+				$countsubjectsbelowdepth++;
 			}
-			if ($countsubjectsbelowdepth > 0) { $countbelowdepth++; }
-			print $output_handle join("\t", @data[0..3]);
-			if (defined $bedline[0]) {
-				print $output_handle "\t$bedline[0]\t";
-			} else {
-				print $output_handle "\t.\t";
-			}
-			print $output_handle "$min\t$max\t".join("\t", @data[4..$#data])."\n";
 		}
-		print "At least one subject had DP<$mindepthval at $countbelowdepth out of $countsites sites in $chr:$start-$stop\n";
+		if ($countsubjectsbelowdepth > 0) { $countbelowdepth++; }
+		print $output_handle join("\t", @data[0..3]);
+		if (defined $bedline[0]) {
+			print $output_handle "\t$bedline[0]\t";
+		} else {
+			print $output_handle "\t.\t";
+		}
+		print $output_handle "$min\t$max\t".join("\t", @data[4..$#data])."\n";
 	}
-	close $input_handle;
-	close $output_handle;
+	print "At least one subject had DP<$mindepthval at $countbelowdepth out of $countsites sites in $chr:$start-$stop\n";
 }
+close $input_handle;
+close $output_handle;
+
 
 
 
