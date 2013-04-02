@@ -667,7 +667,7 @@ sub readPedigree {
 			next;						# skip header lines
 		}
 		print $log_filehandle "$_\n";
-		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno) = split(/[ \t]+/, $_);
+		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno, @other) = split(/[ \t]+/, $_);
 		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
 			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 			die;
