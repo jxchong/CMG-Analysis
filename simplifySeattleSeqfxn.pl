@@ -16,6 +16,8 @@ my ($inputfile, $outputfile, $fxncol, $help);
 
 GetOptions(
 	'in=s' => \$inputfile, 
+	'desiredgenes=s' => \$desiredgenefile,
+	'desiredgenescol=i' => \$desiredgenecol,
 	'fxncol=s' => \$fxncol,
 	'out=s' => \$outputfile,
 	'help|?' => \$help,
@@ -36,14 +38,16 @@ open (my $input_handle, "zcat $accessionfile |") or die "Cannot read $accessionf
 while ( <$input_handle> ) {
 	$_ =~ s/\s+$//;
 	my @line = split("\t", $_);
-	
+	$gene2accession{$line[1]} = $line[8];
 close $input_handle;
 
+
 my %desiredaccessions;
-open (my $input_handle, "zcat $inputfile |") or die "Cannot read $inputfile: $!.\n";
+open (my $input_handle, "$desiredgenefile") or die "Cannot read $desiredgenefile: $!.\n";
 while ( <$input_handle> ) {
 	$_ =~ s/\s+$//;
 	
+	$desiredaccessions{} = $gene2accession{$line[$desiredgenecol]};
 close $input_handle;
 
 
