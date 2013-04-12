@@ -25,7 +25,6 @@ if (!defined $outputfile) {
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
 my $thousandgenomesfile = "$commonvarpath/phase1_release_v3.20101123.snps_indels_svs.sites.vcf.gz";
-my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";
 my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2012_oct';
 my @errorinputs = ("$errorpath/snv.bigexome.vcf.gz", "$errorpath/indels.bigexome.vcf.gz", "$errorpath/snv.v2.vcf.gz", "$errorpath/indels.v2.vcf.gz");
 
@@ -78,7 +77,15 @@ sub readData {
 	##INFO=<ID=EA_AC,Number=.,Type=String,Description="European American Allele Count in the order of AltAlleles,RefAllele">
 	##INFO=<ID=AA_AC,Number=.,Type=String,Description="African American Allele Count in the order of AltAlleles,RefAllele">
 	print "Reading in ESP data for chr $currchr\n";
-	my @espdata = `tabix $espSNPsfile $currchr:$startbp-$endbp`;
+	# my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";	
+	# my @espdata = `tabix $espSNPsfile $currchr:$startbp-$endbp`;
+	my $espfile = "/nfs/home/jxchong/references/ESP6500SI-V2.chr$currchr.snps_indels.vcf.gz";	
+	my @espdata = `tabix $espfile $currchr:$startbp-$endbp`;
+	# 1       802311  .       ATCCCTGACG      A       .       PASS    DBSNP=.;EA_AC=191,5105;AA_AC=177,2753;TAC=368,7858;MAF=3.6065,6.041,4.4736;GTS=A1A1,A1R,RR;EA_GTC=88,15,2545;AA_GTC=79,19,1367;GTC=167,34,3912;DP=216;GL=.;CP=0.0;CG=-
+	# 2.5;AA=.;CA=.;EXOME_CHIP=no;GWAS_PUBMED=.;GM=.;FG=intergenic;AAC=.;PP=.;CDP=.;GS=.;PH=.;EA_AGE=.;AA_AGE=.
+	# 1       802314  .       C       T       .       PASS    DBSNP=.;EA_AC=0,3180;AA_AC=9,1375;TAC=9,4555;MAF=0.0,0.6503,0.1972;GTS=TT,TC,CC;EA_GTC=0,0,1590;AA_GTC=0,9,683;GTC=0,9,2273;DP=216;GL=.;CP=0.0;CG=0.2;AA=C;CA=.;EXOME_CHIP=no;
+	# GWAS_PUBMED=.;GM=.;FG=intergenic;AAC=.;PP=.;CDP=.;GS=.;PH=.;EA_AGE=.;AA_AGE=.
+	
 	$exit_value = $? >> 8;
 	if ($exit_value != 0) {
 		die "Error: exit value $exit_value\n@espdata\n";

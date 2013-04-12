@@ -27,7 +27,7 @@ if (!defined $inputfile) {
 
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
-my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.tsv.gz";
+my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.2013-04-10.wESPv2.tsv.gz";
 
 if (!-e $errorMAFfile) {
 	die "Cannot read from reference data: $errorMAFfile :$?\n";
@@ -87,43 +87,32 @@ while ( <FILE> ) {
 	next if ($_ =~ /^#/);
 	my @line = split ("\t", $_);
 	my ($chr, $pos, $vartype, $ref, $alt) = @line[0..4];
-	if ($inputfiletype eq 'vcf') {
-		$vartype = determinevartype($ref, $alt);
-	}
+	# if ($inputfiletype eq 'vcf') {
+	# 	$vartype = determinevartype($ref, $alt);
+	# }
 	
 	if ($chr ne $workingchr) {
 		my $maxmafs_ref = readData($chr);
 		%chr_contents = %{$maxmafs_ref};
 		$workingchr = $chr;
-		# my $fakelookup = "207304900.T.C";
-		# print "static 207304900.T.C: $chr_contents{'207304900.T.C'}{'pop'}\n";
-		# print "fakelookup = $fakelookup : $chr_contents{$fakelookup}{'pop'}\n";
-		# print "\n";
 	}
 	
-	# print "\npos=$pos, ref=$ref, alt=$alt\n";
-	# while (my ($lookup, $val) = each %chr_contents) {
-	# 	print "$lookup -> $val ($chr_contents{$lookup}{'pop'})\n";
-	# }
-	# my $fakelookup = "207304900.T.C";
-	# print "1 static 207304900.T.C: $chr_contents{'207304900.T.C'}{'pop'}\n";
-	# print "1 fakelookup = $fakelookup : $chr_contents{$fakelookup}{'pop'}\n";
-	# print "\n";
-	
 	my ($errorfreq, $maxpopmaf) = (0, 0);
-	my $lookup = "$pos.$ref.$alt";
-	if (exists $chr_contents{$lookup}{'pop'}) {
-		$errorfreq = $chr_contents{$lookup}{'error'};
-		$maxpopmaf = $chr_contents{$lookup}{'pop'};
-	}	
-	# print "2 lookup = $lookup : $chr_contents{$lookup}{'pop'}\n";
-	# print "2 fakelookup = $fakelookup : $chr_contents{$fakelookup}{'pop'}\n";
-	# if (defined $chr_contents{$lookup}{'pop'}) {
-	# 	print "lookup exists\n";
-	# }
-	# if (defined $chr_contents{$fakelookup}{'pop'}) {
-	# 	print "fake lookup exists\n";
-	# }
+
+	my @altalleles = split(",", $alt);									# in case there are multi-allelic SNPs
+	for (my $i=0; $i<=$#altalleles; $i++) {
+		my $lookup = "$pos.$ref.$altalleles[$i]";
+		if (exists $chr_contents{$lookup}{'pop'}) {
+			# simplification; take the max frequency among all possible alternate alleles
+			if ($chr_contents{$lookup}{'error'} > $errorfreq) {
+				$errorfreq = $chr_contents{$lookup}{'error'};
+			}
+			if ($chr_contents{$lookup}{'pop'} > $maxpopmaf) {
+				$maxpopmaf = $chr_contents{$lookup}{'pop'};
+			}
+		}	
+	}
+	
 	my $afpop = sprintf("%.4f", $maxpopmaf);
 	my $afcmg = sprintf("%.4f", $errorfreq);
 	if ($inputfiletype eq 'vcf') {
@@ -142,14 +131,14 @@ close OUT;
 
 
 
-sub determinevartype {
-	my ($ref, $alt) = @_;
-	my $vartype = 'SNP';
-	if (length($ref)>1 || length($alt)>1) {
-		$vartype = 'indel';
-	}
-	return $vartype;
-}
+# sub determinevartype {
+# 	my ($ref, $alt) = @_;
+# 	my $vartype = 'SNP';
+# 	if (length($ref)>1 || length($alt)>1) {
+# 		$vartype = 'indel';
+# 	}
+# 	return $vartype;
+# }
 
 sub determineInputType {
 	my ($firstline, $filename) = @_;
