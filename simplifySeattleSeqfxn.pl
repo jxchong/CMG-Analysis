@@ -16,7 +16,7 @@ my ($inputfile, $outputfile, $fxncol, $help);
 
 GetOptions(
 	'in=s' => \$inputfile, 
-	'desiredgenes=s' => \$desiredgenefile,
+	'desiredgenefile=s' => \$desiredgenefile,
 	'desiredgenescol=i' => \$desiredgenecol,
 	'fxncol=s' => \$fxncol,
 	'out=s' => \$outputfile,
@@ -30,6 +30,10 @@ if (!defined $inputfile) {
 	pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --out not defined\n");
 } elsif (!defined $fxncol) {
 	pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --fxncol not defined\n");
+} elsif (!defined $desiredgenefile) {
+	pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --desiredgenefile not defined\n");
+} elsif (!defined $desiredgenescol) {
+	pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --desiredgenescol not defined\n");
 }
 
 my %gene2accession;
@@ -38,7 +42,8 @@ open (my $input_handle, "zcat $accessionfile |") or die "Cannot read $accessionf
 while ( <$input_handle> ) {
 	$_ =~ s/\s+$//;
 	my @line = split("\t", $_);
-	$gene2accession{$line[1]} = $line[8];
+	# gene => accession
+	push(@$gene2accession{$line[1]}, $line[8]);
 close $input_handle;
 
 
@@ -46,8 +51,10 @@ my %desiredaccessions;
 open (my $input_handle, "$desiredgenefile") or die "Cannot read $desiredgenefile: $!.\n";
 while ( <$input_handle> ) {
 	$_ =~ s/\s+$//;
-	
-	$desiredaccessions{} = $gene2accession{$line[$desiredgenecol]};
+	my @line = split("\t", $_);
+	my $desiredgene = $line[$desiredgenecol-1];
+	# accessions => gene
+	$desiredaccessions{$gene2accession{$desiredgene}} = $desiredgene;
 close $input_handle;
 
 
@@ -70,10 +77,10 @@ while ( <$input_handle> ) {
 	$_ =~ s/\s+$//;					# Remove line endings
 	my @line = split("\t", $_);
 	
-	my $gene;
+	my $accessionstring = getfieldstring($line[$fxncol-1], "GM");			# only works for vcfs
+	my $fxnstring = getfieldstring($line[$fxncol-1], "FG");
 	
-	my $fxnstring = getfxnstring($line[$fxncol-1]);
-	my ($worstfxnval, $worstfxn) = getSSfxn($fxnstring);
+	my ($worstfxnval, $worstfxn, $worstgene) = getSSfxn($fxnstring, $accessionstring);
 	print $output_handle join("\t", @line[0..($fxncol-1)])."\t";
 	print $output_handle "$worstfxnval\t$worstfxn\t";
 	print $output_handle join("\t", @line[($fxncol)..$#line])."\n";
@@ -83,33 +90,10 @@ close $output_handle;
 
 
 
-
-sub getfxnstring {
-	my $columndata = $_[0];
-	my $fxnstring;
-	
-	if ($columndata =~ /;FG=/) {		# must be a vcf-derived column, split out FG value
-		my @columncontents = split(";", $columndata);
-		foreach my $column (@columncontents) {
-			my ($fieldname, $value) = split("=", $column);
-			if (!defined $value) {
-				$value = '.';
-			}
-			if ($fieldname eq 'FG') {
-				$fxnstring = $value;
-			}
-		}		
-	} else {							# assume column must be only the function, derived from tab-delimited SSAnnotation or SeattleSeqAnnotation file or other
-		$fxnstring = $columndata;
-	}
-	return $fxnstring;
-}
-
-
-
 sub getSSfxn {
 	my $functionimpact = $_[0];
-
+	my $accessionstring = $_[1];
+	
 	my %fxnvalues = map {$_ => 0} qw(intergenic near-gene-3 near-gene-5 none);
 	@fxnvalues{qw(intron utr utr-3 utr-5)} = (1) x 4;
 	@fxnvalues{qw(coding-synonymous)} = 2;
@@ -124,10 +108,13 @@ sub getSSfxn {
 	@fxnvalues{qw(frameshift frameshift-near-splice)} = (11) x 2;
 	
 	my @filters = split(",", $functionimpact);
+	my @accessions = split(",", $accessionstring);
 	my $worstfxnval = -1;
 	my $worstfxn;
 	
-	foreach my $eachfilter (@filters) {
+	for (my $i=0; $i<=$#filters; $i++) {
+		my $filter = $filters[$i]; 
+		my $accession = $accessions[$i];
 		# print "fxn=$eachfilter, value=$fxnvalues{$eachfilter}\n";
 		if ($fxnvalues{$eachfilter} > $worstfxnval) {
 			$worstfxnval = $fxnvalues{$eachfilter};
@@ -135,8 +122,34 @@ sub getSSfxn {
 		}
 	}
 
-	return ($worstfxnval, $worstfxn);
+	return ($worstfxnval, $worstfxn, $worstgene);
 }
+
+
+sub getfieldstring {
+	my $columndata = $_[0];
+	my $desiredfield = $_[1];
+	my $string;
+	
+	if ($columndata =~ /;$desiredfield=/) {		# must be a vcf-derived column, split out FG value
+		my @columncontents = split(";", $columndata);
+		foreach my $column (@columncontents) {
+			my ($fieldname, $value) = split("=", $column);
+			if (!defined $value) {
+				$value = '.';
+			}
+			if ($fieldname eq 'FG') {
+				$string = $value;
+			}
+		}		
+	} else {							# assume column must be only the desired one, derived from tab-delimited SSAnnotation or SeattleSeqAnnotation file or other
+		$string = $columndata;
+	}
+	return $string;
+}
+
+
+
 
 
 
