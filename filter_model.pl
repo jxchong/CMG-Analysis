@@ -592,7 +592,7 @@ sub checkandstoreOptions {
 			$mindp = 8;
 		}
 		if (!defined $minGQ) {
-			$minGQ = 30;
+			$minGQ = 20;
 		}
 	# }
 
@@ -1216,7 +1216,7 @@ perl B<filter_model.pl> I<[options]>
 =item B<--gq> I<number>
 
 	minimum GQ for subject genotype; otherwise considered missing
-	optional, default=30
+	optional, default=20
 
 =back
 

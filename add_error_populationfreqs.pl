@@ -43,6 +43,13 @@ open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
 my %chr_contents = ();
 my $headerline;
 my $workingchr = "NA";
+my $usetabix = 0;
+
+my ($countinputlines, $blah) = split(" ", `wc -l $inputfile`);
+if ($countinputlines < 50) {
+	$usetabix = 1;
+	print "Only $countinputlines variants requested; using tabix for each variant\n";
+}
 
 open (FILE, "$inputfile") or die "Cannot read $inputfile file: $!.\n";
 if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of the file
@@ -91,11 +98,14 @@ while ( <FILE> ) {
 	# 	$vartype = determinevartype($ref, $alt);
 	# }
 	
-	if ($chr ne $workingchr) {
+	if ($usetabix == 1) {
+		my $maxmafs_ref = readDataTabix($chr, $pos, $pos);
+		%chr_contents = %{$maxmafs_ref};
+	} elsif ($chr ne $workingchr && $usetabix == 0) {
 		my $maxmafs_ref = readData($chr);
 		%chr_contents = %{$maxmafs_ref};
 		$workingchr = $chr;
-	}
+	} 
 	
 	my ($errorfreq, $maxpopmaf) = (0, 0);
 
@@ -139,6 +149,32 @@ close OUT;
 # 	}
 # 	return $vartype;
 # }
+
+sub readDataTabix {
+	my $currchr = $_[0];
+	my $startbp = $_[1];
+	my $endbp = $_[2];
+	
+	my %maxmafs = ();
+	my $exit_value;
+
+	print "Reading in error/MAF data for chr $currchr\n";
+	my @popdata = `tabix $errorMAFfile $currchr:$startbp-$endbp`;
+	$exit_value = $? >> 8;
+	if ($exit_value != 0) {
+		die "Error: exit value $exit_value\n@popdata\n";
+	}
+	foreach (@popdata) {
+		$_ =~ s/\s+$//;					# Remove line endings
+		# print "storing $_\n";
+		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside) = split("\t", $_);
+		my $lookup = "$varstart.$ref.$alt";
+		$maxmafs{$lookup}{'error'} = $freqinCMG;
+		$maxmafs{$lookup}{'pop'} = $freqinOutside;
+		# print "stored $maxmafs{$lookup}{'pop'} in $lookup\n";
+	}
+	return \%maxmafs;
+}
 
 sub determineInputType {
 	my ($firstline, $filename) = @_;
