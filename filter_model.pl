@@ -99,7 +99,7 @@ if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "chr	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	PrctAltFreqinCMG	PrctAltFreqOutside	clinAssoc	KEGG	";
+	print $output_filehandle "chr	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
 	print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	print $output_filehandle join("DP	", @orderedsubjects)."DP	";
 	print $output_filehandle join("GQ	", @orderedsubjects)."GQ	FamilieswHits\n";
@@ -165,8 +165,8 @@ while ( <$input_filehandle> ) {
 	}
 			
 	my ($iserror, $iscommon) = (0,0);
-	$freqinCMG = $freqinCMG/100;							# storing allele freq as percentage
-	$freqinOutside = $freqinOutside/100;					# storing allele freq as percentage
+	$freqinCMG = $freqinCMG/100;							# store allele freq as percentage, so convert back to frequency
+	$freqinOutside = $freqinOutside/100;					# store allele freq as percentage, so convert back to frequency
 	if ($freqinCMG >= $cmgfreqcutoff) {
 		$iserror = 1;
 		$counterrorvariants++;
@@ -669,17 +669,17 @@ sub readPedigree {
 		}
 		print $log_filehandle "$_\n";
 		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno, @other) = split(/[ \t]+/, $_);
-		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt') {
+		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt' && $desiredgeno ne 'any') {
 			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
-			die;
+			die "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 		}
 		if (!defined $validvalues{$phenotype}) {
 			print $log_filehandle "$familyid	$subjectid has an illegal phenotype value ($phenotype)\n";
-			die;
+			die "$familyid	$subjectid has an illegal phenotype value ($phenotype)\n";
 		}
 		if (!defined $validvalues{$sex}) {
 			print $log_filehandle "$familyid	$subjectid has an illegal sex value ($sex)\n";
-			die;
+			die "$familyid	$subjectid has an illegal sex value ($sex)\n";
 		}
 		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
 		push(@orderedsubjects, $subjectid);
