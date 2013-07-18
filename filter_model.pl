@@ -11,6 +11,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 use Pod::Usage;
+use Moose;
 
 my $help = 0;
 my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
@@ -97,9 +98,9 @@ if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 
 ###################### PRINT HEADER FOR OUTPUT #############################
 if ($inputfiletype ne 'vcf') {
-	print $output_filehandle join("	", @header[@keepcolumns])."	FamilieswHits\n";
+	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "chr	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
 	print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	print $output_filehandle join("DP	", @orderedsubjects)."DP	";
 	print $output_filehandle join("GQ	", @orderedsubjects)."GQ	FamilieswHits\n";
@@ -158,9 +159,8 @@ while ( <$input_filehandle> ) {
 		print STDOUT "GQs=@subjectquals\n";
 	}
 	
-	# Print current chromosome being processed (for user knowledge)
-	if ($workingchr ne $chr) {
-		print STDOUT "Reading variants on chr $chr\n";
+	if ($workingchr ne $chr && ($chr eq '1' || $chr eq '6' || $chr eq '12' || $chr eq '22')) {
+		print STDOUT "Reading variants on chr $chr\n";			# Print current chromosome being processed (for user knowledge)
 		$workingchr = $chr;
 	}
 			
@@ -370,7 +370,7 @@ while ( <$input_filehandle> ) {
 			if ($inputfiletype ne 'vcf') {
 				$data = join("	", @line);
 			} else {
-				$data = "$chr	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
