@@ -12,10 +12,12 @@ use warnings;
 use Getopt::Long;
 use List::Util qw(sum);
 
-my ($inputfile, $outputfile, $capturearray);
+my ($inputfile, $outputfile, $capturearray, $tempstartbp, $tempendbp);
 
 GetOptions(
 	'out=s' => \$outputfile,
+	# 's:i' => \$tempstartbp,
+	# 'e:i' => \$tempendbp,
 );
 
 
@@ -36,8 +38,8 @@ my @errorinputs = ("$errorpath/bigexome.vcf.gz", "$errorpath/v2.vcf.gz");
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
 print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
-foreach my $currchr (((1..22), "X", "Y")) {
-# foreach my $currchr ((("X", "Y"))) {
+# foreach my $currchr (((1..22), "X", "Y")) {
+foreach my $currchr (("X", "Y")) {
 	print "Reading in chr $currchr data\n";
 	my $maxaltAFs_ref = readData($currchr);
 	my %chr_contents = %{$maxaltAFs_ref};
@@ -72,12 +74,22 @@ sub readData {
 	my %maxaltAFs;
 	my $exit_value;
 	my $startbp = 1;
-	my $endbp = 300000000;
+	my $endbp = 270000000;
+	my ($start1kg, $end1kg) = (1, 270000000);
+	my $incrementbp = 30000000;
+	
+	# note that 1KG Allele Frequency is for the ALTERNATE allele
+	for (my $i=0; $i<=270000000; $i+=$incrementbp) {
+		$start1kg = $i+1;
+		$end1kg = $i+$incrementbp;
+		save_parse_1KG($currchr, $start1kg, $end1kg, \%maxaltAFs);
+	}
+	
 	# note that ESP altAF is for MINOR allele
 	##INFO=<ID=altAF,Number=.,Type=String,Description="Minor Allele Frequency in percent in the order of EA,AA,All">
 	##INFO=<ID=EA_AC,Number=.,Type=String,Description="European American Allele Count in the order of AltAlleles,RefAllele">
 	##INFO=<ID=AA_AC,Number=.,Type=String,Description="African American Allele Count in the order of AltAlleles,RefAllele">
-	print "Reading in ESP data for chr $currchr\n";
+	print STDERR "Reading in ESP data for chr $currchr\n";
 	# my $espSNPsfile = "$commonvarpath/ESP6500.snps.vcf.gz";	
 	# my @espdata = `tabix $espSNPsfile $currchr:$startbp-$endbp`;
 	my $espfile = "/nfs/home/jxchong/references/ESP6500SI-V2.chr$currchr.snps_indels.vcf.gz";	
@@ -128,46 +140,8 @@ sub readData {
 		# if ($varpos > 1000000) { last; }
 	}
 
-	print "Reading in 1KG data for chr $currchr\n";
-	# note that 1KG Allele Frequency is for the ALTERNATE allele
-	my @thousandgenomedata = `tabix $thousandgenomesfile $currchr:$startbp-$endbp`;
-	$exit_value = $? >> 8;
-	if ($exit_value != 0) {
-		die "Error: exit value $exit_value\n@espdata\n";
-	}
-	foreach (@thousandgenomedata) {
-		if ($_ =~ '#') { next; }
-		$_ =~ s/\s+$//;
-		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
-		my @populations = qw(ASN AMR AFR EUR);
-		my @popaltAFs;
-		foreach my $population (@populations) {
-			my $altAFfield = $population."_AF";
-			$vardata[2] =~ m/;$altAFfield=((\.|\d)+)/;
-			if (defined $1) {
-				push(@popaltAFs, $1);
-			}
-		}
-		my $maxpopaltAF = 0;
-		foreach my $varaltAF (@popaltAFs) {
-			if ($varaltAF > $maxpopaltAF) {
-				$maxpopaltAF = $varaltAF;
-			}
-		}
-
-		my $lookup = "$ref.$alt";
-		if (!defined $maxaltAFs{$varpos}{$lookup}{'pop'}) {
-			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
-			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
-		} elsif ($maxpopaltAF > $maxaltAFs{$varpos}{$lookup}{'pop'}) {
-			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
-			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
-		}
-		# if ($varpos > 1000000) { last; }
-	}
-
 	foreach my $file (@errorinputs) {
-		print "Reading in error data for chr $currchr\n";
+		print STDERR "Reading in error data for chr $currchr\n";
 		my @errordata = `tabix $file $currchr:$startbp-$endbp`;
 		$exit_value = $? >> 8;
 		if ($exit_value != 0) {
@@ -198,6 +172,57 @@ sub readData {
 	}
 	
 	return \%maxaltAFs;
+}
+
+
+
+
+
+
+
+sub save_parse_1KG {
+	my ($currchr, $start1kg, $end1kg, $maxaltAF_ref) = @_;
+	my %maxaltAFs = %{$maxaltAF_ref};
+	
+	my @thousandgenomedata;		
+	print STDERR "Reading in 1KG data for chr $currchr with command tabix $thousandgenomesfile $currchr:$start1kg-$end1kg\n";
+	@thousandgenomedata = `tabix $thousandgenomesfile $currchr:$start1kg-$end1kg`;
+	print STDERR "Finished reading 1KG data for chr $currchr\n";
+	my $exit_value = $? >> 8;
+	if ($exit_value != 0) {
+		die "Error: exit value $exit_value\n@thousandgenomedata\n";
+	}
+	print STDERR "Parsing 1KG data for chr $currchr:$start1kg-$end1kg\n";
+
+	foreach (@thousandgenomedata) {
+		if ($_ =~ '#') { next; }
+		$_ =~ s/\s+$//;
+		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
+		my @populations = qw(ASN AMR AFR EUR);
+		my @popaltAFs;
+		foreach my $population (@populations) {
+			my $altAFfield = $population."_AF";
+			$vardata[2] =~ m/;$altAFfield=((\.|\d)+)/;
+			if (defined $1) {
+				push(@popaltAFs, $1);
+			}
+		}
+		my $maxpopaltAF = 0;
+		foreach my $varaltAF (@popaltAFs) {
+			if ($varaltAF > $maxpopaltAF) {
+				$maxpopaltAF = $varaltAF;
+			}
+		}
+
+		my $lookup = "$ref.$alt";
+		if (!defined $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
+		} elsif ($maxpopaltAF > $maxaltAFs{$varpos}{$lookup}{'pop'}) {
+			$maxaltAFs{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
+			$maxaltAFs{$varpos}{$lookup}{'error'} = 0;
+		}
+	}
 }
 
 
