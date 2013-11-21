@@ -100,7 +100,7 @@ if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
+	print $output_filehandle "#chr	start	end	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
 	print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	print $output_filehandle join("DP	", @orderedsubjects)."DP	";
 	print $output_filehandle join("GQ	", @orderedsubjects)."GQ	FamilieswHits\n";
