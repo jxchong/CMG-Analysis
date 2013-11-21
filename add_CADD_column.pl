@@ -12,7 +12,7 @@ use Getopt::Long;
 use Pod::Usage;
 
 
-my ($inputfile, $outputfile, $chrcol, $poscol, $refcol, $altcol, $help);
+my ($inputfile, $outputfile, $help);
 
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -44,27 +44,28 @@ while ( <$input_handle> ) {
 				if ($header[$i] =~ /start/i) { $poscol = $i; }
 				if ($header[$i] =~ /ref/i) { $refcol = $i; }
 				if ($header[$i] =~ /alt/i) { $altcol = $i; }
-				if ($i >= 6) {last;}
 			}
-			# print "Found chrcol=$chrcol, poscol=$poscol, refcol=$refcol, altcol=$altcol\n";
-			print $output_handle "\tCADDphred";
+			print $output_handle "\tCADD";
 		}
-	} else {
-		my @line = split("\t", $_);
-		$line[0] =~ s/chr//;
-		# print "Executing tabix $caddfile $line[$chrcol]:$line[$poscol]-$line[$poscol]\n";
-		my @cadd_data = `tabix $caddfile $line[$chrcol]:$line[$poscol]-$line[$poscol]` or die "Cannot execute tabix\n";
-		my $phred = "NA";
-		
-		foreach my $scoreline (@cadd_data) {
-			$scoreline =~ s/\s+$//;
-			my ($chr,$pos,$ref,$alt,$raw,$caddphred) = split("\t", $scoreline);
-			if ($ref eq $line[$refcol] && $alt eq $line[$altcol]) {
-				$phred = $caddphred;
-			}
-		}
-		print $output_handle "\t$phred";
 	}
+	
+	my @line = split("\t", $_);
+	$line[0] =~ s/chr//;
+	my @cadd_data = system("tabix $caddfile $line[$chrcol]:$poscol-$poscol") or die "Cannot execute tabix\n";
+	
+	my $found_cadd_score = 0;
+	foreach my $scoreline (@cadddata) {
+		my ($chr,$pos,$ref,$alt,$raw,$phred) = split("\t", $scoreline);
+		if ($ref eq $line[$refcol] && $alt eq $line[$altcol]) {
+			print $output_handle "\t$phred";
+			$found_cadd_score = 1;
+		}
+	}
+	
+	if ($found_cadd_score == 0) {
+		print $output_handle "\tNA";
+	}
+	
 	print $output_handle "\n";
 }
 close $input_handle;
