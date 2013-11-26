@@ -94,6 +94,15 @@ my @keepcolumns = @{$keepcolumns_ref};
 # Check that user input corresponds to input data files
 if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
+} else {
+	for (my $i=0; $i<=$#orderedsubjects; $i++) {
+		my $temp = $header[$genotypecolumns[$i]];
+		$temp =~ s/GType//i;
+		if ($temp ne $orderedsubjects[$i]) {
+			print "Your input subject definition file ($subjectdeffile) lists subjects in a different order than in the exome data ($inputfile)\n";
+			die "Column #$i contains subject $temp in $inputfile but $orderedsubjects[$i] in $subjectdeffile\n";
+		}
+	}
 }
 
 ###################### PRINT HEADER FOR OUTPUT #############################

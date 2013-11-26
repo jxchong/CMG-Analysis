@@ -27,8 +27,8 @@ if (!defined $outputfile) {
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
 my $thousandgenomesfile = "$commonvarpath/phase1_release_v3.20101123.snps_indels_svs.sites.vcf.gz";
-my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2013_april';
-my @errorinputs = ("$errorpath/bigexome.vcf.gz", "$errorpath/v2.vcf.gz");
+my $errorpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references/systematic_error/2013_nov';
+my @errorinputs = ("$errorpath/systematic_errors.vcf.gz");
 
 # temporary files
 # my $commonvarpath = '/nfs/home/jxchong/jessica_annovar';
@@ -38,8 +38,8 @@ my @errorinputs = ("$errorpath/bigexome.vcf.gz", "$errorpath/v2.vcf.gz");
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
 print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
-# foreach my $currchr (((1..22), "X", "Y")) {
-foreach my $currchr (("X", "Y")) {
+foreach my $currchr (((1..22), "X", "Y")) {
+# foreach my $currchr (("X", "Y")) {
 	print "Reading in chr $currchr data\n";
 	my $maxaltAFs_ref = readData($currchr);
 	my %chr_contents = %{$maxaltAFs_ref};
