@@ -242,10 +242,10 @@ while ( <$input_filehandle> ) {
 				if ($inheritmodel eq 'compoundhetmosaic') {											# for compound het mosaic model, which parent should be a carrier?
 					if (!defined $compoundhetcarriers{$familyid}) {
 						$compoundhetcarriers{$familyid} = 'NA';
-					} elsif ($desiredgeno eq 'het' && ($relation eq 'father' || $relation eq 'mother')) {
+					} elsif ($desiredgeno eq 'het' && ($relation =~ /^father$/i || $relation =~ /^mother$/i)) {
 						$compoundhetcarriers{$familyid} = $relation;								
-					} elsif ($desiredgeno eq 'ref' && ($relation eq 'father' || $relation eq 'mother')) {
-						if ($relation eq 'father') {
+					} elsif ($desiredgeno eq 'ref' && ($relation =~ /^father$/i || $relation =~ /^mother$/i)) {
+						if ($relation =~ /^father$/i) {
 							$compoundhetcarriers{$familyid} = 'mother';	
 						} else {
 							$compoundhetcarriers{$familyid} = 'father';	
@@ -668,7 +668,13 @@ sub readPedigree {
 			next;						# skip header lines
 		}
 		print $log_filehandle "$_\n";
-		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno, @other) = split(/[ \t]+/, $_);
+		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno, @other) = split("\t", $_);
+		if ($relation =~ /^father$/i) {
+			$relation = 'father';
+		}
+		if ($relation =~ /^mother$/i) {
+			$relation = 'mother';
+		}
 		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt' && $desiredgeno ne 'any') {
 			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 			die "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
@@ -1056,7 +1062,7 @@ sub parse_vcf_byline {
 	# $UWexomescovered = $line[17];
 	
 	my @format = split(":", $line[8]);
-	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_rd, $pindel_ad);
+	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_ad);
 	my $altdp = 0;
 	for (my $i=0; $i<=$#format; $i++) {
 		if ($format[$i] eq 'GT') {
@@ -1065,8 +1071,6 @@ sub parse_vcf_byline {
 			$dpcolnum = $i;
 		} elsif ($format[$i] eq 'GQ') {
 			$gqcolnum = $i;
-		} elsif ($format[$i] eq 'RD') {
-			$pindel_rd = $i;
 		} elsif ($format[$i] eq 'AD') {
 			$pindel_ad = $i;
 		} elsif ($format[$i] eq 'DP4') {
@@ -1092,7 +1096,8 @@ sub parse_vcf_byline {
 					push(@subjectdps, ($dp4[0]+$dp4[1]+$dp4[2]+$dp4[3]));
 				}
 			} else {
-				push(@subjectdps, ($subjectdata[$pindel_rd]+$subjectdata[$pindel_ad]));
+				my ($pindel_refd, $pindel_altd) = split(",", $subjectdata[$pindel_ad]);
+				push(@subjectdps, ($pindel_refd+$pindel_altd));
 			}
 			if (defined $gqcolnum) {
 				push(@subjectquals, $subjectdata[$gqcolnum]);
