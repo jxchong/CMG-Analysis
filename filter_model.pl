@@ -624,7 +624,7 @@ sub checkandstoreOptions {
 		%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 	} 
 	if ($excludeGVSfunction eq 'default') {
-		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous synonymous);
+		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous synonymous 3-prime-UTR 5-prime-UTR downstream-gene upstream-gene);
 	} elsif ($excludeGVSfunction eq 'NA')  {
 		%GVStoexclude = map {$_ => 1} qw(NA);
 	} else {
