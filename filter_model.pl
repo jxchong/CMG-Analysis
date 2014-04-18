@@ -85,25 +85,29 @@ $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("	", $headerline);
 my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
 print "Input file type is $inputfiletype\n";
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref) = parseHeader(@header);
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref, $genotypeorder_ref) = parseHeader(@header);
 my @genotypecolumns = @{$genotypecolumns_ref};
 my @qualcolumns = @{$qualcolumns_ref};
 my @dpcolumns = @{$dpcolumns_ref};
 my @keepcolumns = @{$keepcolumns_ref};
+@orderedsubjects = @{$genotypeorder_ref};
 
 # Check that user input corresponds to input data files
-if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
-	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
-}
+# if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
+# 	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
+# } 
+
 
 ###################### PRINT HEADER FOR OUTPUT #############################
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
 	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
-	print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
-	print $output_filehandle join("DP	", @orderedsubjects)."DP	";
-	print $output_filehandle join("GQ	", @orderedsubjects)."GQ	FamilieswHits\n";
+	print $output_filehandle join("\t", @orderedsubjects);
+	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
+	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
+	# print $output_filehandle join("GQ	", @orderedsubjects)."GQ";
+	print $output_filehandle "\tFamilieswHits\n";
 }
 
 
@@ -370,7 +374,8 @@ while ( <$input_filehandle> ) {
 			if ($inputfiletype ne 'vcf') {
 				$data = join("	", @line);
 			} else {
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -415,10 +420,10 @@ while (my ($gene, $results_ref) = each %genehits) {
 	my @hitdata = @{$results_ref};
 	
 	# account for possible compound het model, then count hits in each family for this gene
-	if ($debugmode >= 1) { print STDOUT "in $gene:\n"; }		
+	if ($debugmode >= 1) { print STDOUT "To account for comphet mode, count hits in each family for gene $gene:\n"; }		
 	my $resultsFamiliesvsModel_ref = checkFamiliesvsModel(\@hitdata, $inheritmodel);
 	# review all families for required number of hits in this gene
-	my $enoughfamilieshavehits = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
+	my ($enoughfamilieshavehits, $familyIDswhits_ref) = checkFamiliesforHits($resultsFamiliesvsModel_ref, $inheritmodel, $countuniquefamilies, $minhits);													
 	
 	if ($enoughfamilieshavehits == 1) {
 		$geneswhits{$gene}++;
@@ -428,14 +433,22 @@ while (my ($gene, $results_ref) = each %genehits) {
 			my %matchingfamilyunits = %{${$hit}[2]};
 			if ($debugmode >= 1) { print STDOUT "Enough families, total=".scalar(keys %matchingfamilies)."+".scalar(keys %matchingfamilyunits)." have hits\n"; }
 			
-			my @familyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
-	  		$countoutputvariants++;
-			my @hitvarinfoarray = split("	", $hitvarinfo);
-	  		# print $output_filehandle "$hitvarinfo	".join(";", @familyids)."\n";
-			if ($inputfiletype ne 'vcf') {
-				print $output_filehandle join("	", @hitvarinfoarray[@keepcolumns])."	".join(";", @familyids)."\n";
-			} else {
-				print $output_filehandle join("	", @hitvarinfoarray)."	".join(";", @familyids)."\n";
+			my @possiblefamilyids = ((keys %matchingfamilies), (keys %matchingfamilyunits));
+			my @finalfamilyids;
+			foreach my $family (@possiblefamilyids) {
+				if (grep(/^$family$/, @{$familyIDswhits_ref})) {
+					push(@finalfamilyids, $family);
+				}
+			}
+			if (scalar(@finalfamilyids) >= 1) {
+		  		$countoutputvariants++;
+				my @hitvarinfoarray = split("	", $hitvarinfo);
+		  		# print $output_filehandle "$hitvarinfo	".join(";", @familyids)."\n";
+				if ($inputfiletype ne 'vcf') {
+					print $output_filehandle join("	", @hitvarinfoarray[@keepcolumns])."	".join(";", @finalfamilyids)."\n";
+				} else {
+					print $output_filehandle join("	", @hitvarinfoarray)."	".join(";", @finalfamilyids)."\n";
+				}
 			}
 	  	}
 	} else {
@@ -529,8 +542,10 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				foreach my $member (@familymembers) {
 					if ($debugmode >= 1) { print STDOUT "${$familyhits}{$member} hit(s) in $member\n"; }	
 					if ($member ne 'mother' && $member ne 'father' && ${$familyhits}{$member} >= 2) {
+						if ($debugmode >= 4) { print STDOUT "... which is >= 2 (enough hits for an affected subject)\n"; }	
 						$counthitsinfamily++;
 					} elsif (($member eq 'mother' || $member eq 'father') && ${$familyhits}{$member} >= 1) {		# is this ok in a compoundhetmosaic model?
+						if ($debugmode >= 4) { print STDOUT "... which is >= 1 (enough hits for an unaffected parent)\n"; }	
 						$counthitsinfamily++;
 					}
 				}
@@ -538,25 +553,28 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 				if ($debugmode >= 3) { print STDOUT "Mother has ${$familyhits}{'mother'} hits and father has ${$familyhits}{'father'} hits in family $familyid\n"; }	
 				if ($counthitsinfamily+$maxmismatchesperfamily >= scalar(@familymembers)) {
 					$countfamiliesmatch++;
-				}
+					push(@trackfamilyidswHits, $familyid);
+				} 
 			} elsif (!ref($familyhits)) {																									
 				if ($familyhits >= 2) {
 					$countfamiliesmatch++;
+					push(@trackfamilyidswHits, $familyid);
 				}
 			}
 		} else {
 			if ($debugmode >= 1) { print STDOUT "family=$familyid has hits? $familyhits\n"; }
 			if ($familyhits >= 1) {
 				$countfamiliesmatch++;
+				push(@trackfamilyidswHits, $familyid);
 			}
 		}
 	}
 	
 	# if desired number of families have hits in gene
 	if ($countfamiliesmatch >= $minhits) {
-		return 1;
+		return (1, \@trackfamilyidswHits);
 	} else {
-		return 0;
+		return (0, \@trackfamilyidswHits);
 	}
 }
 
@@ -675,7 +693,7 @@ sub readPedigree {
 		if ($relation =~ /^mother$/i) {
 			$relation = 'mother';
 		}
-		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt' && $desiredgeno ne 'any') {
+		if ($desiredgeno ne 'het' && $desiredgeno ne 'ref' && $desiredgeno ne 'alt' && $desiredgeno ne 'any' && $desiredgeno ne 'notref' && $desiredgeno ne 'notalt' && $desiredgeno ne 'nothet') {
 			print $log_filehandle "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 			die "$familyid	$subjectid has an illegal desired genotype ($desiredgeno)\n";
 		}
@@ -710,7 +728,7 @@ sub parseHeader {
 	# add code to check for undefined columns
 	##
 	my @header = @_;
-	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns);
+	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
 	for (my $i=0; $i<=$#header; $i++) {
 		my $columnname = $header[$i];
 		if ($columnname =~ /Qual/i) {
@@ -725,6 +743,9 @@ sub parseHeader {
 		# }
 		if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
 			push(@genotypecolumns, $i);
+			if (!defined $subjects{"#$columnname"}) {
+				push(@genotypeorder, $columnname);
+			}
 		}
 		if ($columnname =~ /Freqin/i) {
 			if ($columnname =~ /FreqinCMG/i) {
@@ -744,7 +765,7 @@ sub parseHeader {
 			$gatkfiltercol = $i;
 		}
 	}
-	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns);
+	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns, \@genotypeorder);
 }
 
 sub passGATKfilters {
@@ -804,7 +825,7 @@ sub checkGenoMatch {
 		} else {
 			@alleles = split("/", $genotype);
 		}
-	
+		# not the most efficient way of coding these checks, but it's fast enough
 		if ($desiredgeno eq 'ref') {
 			if ($alleles[0] eq $ref && $alleles[1] eq $ref) {
 				$ismatch = 1;
@@ -820,7 +841,19 @@ sub checkGenoMatch {
 			if ($sex == 1 && ($chr eq "X" || $chr eq "Y") && (defined $altalleles{$alleles[0]} && defined $altalleles{$alleles[1]})) {
 				$ismatch = 1;
 			}
-		} 
+		} elsif ($desiredgeno eq 'notalt') {
+			if (!defined $altalleles{$alleles[0]} || !defined $altalleles{$alleles[1]}) {
+				$ismatch = 1;
+			}
+		} elsif ($desiredgeno eq 'notref') {
+			if ($alleles[0] ne $ref || $alleles[1] ne $ref) {
+				$ismatch = 1;
+			}
+		} elsif ($desiredgeno eq 'nothet') {
+			if (($alleles[0] eq $ref && $alleles[1] eq $ref) || (defined $altalleles{$alleles[1]} && defined $altalleles{$alleles[0]})) {
+				$ismatch = 1;
+			}
+		}
 	}
 	# if ($debugmode >= 3) {
 		# print STDOUT "$vartype	geno=$genotype	desiredgeno=$desiredgeno	ref=$ref	alt=$alt	genoalleles=@alleles	ismatch=$ismatch\n";				# DEBUG
