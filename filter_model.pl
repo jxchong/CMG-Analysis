@@ -212,6 +212,7 @@ while ( <$input_filehandle> ) {
 			my $genotype = $subjectgenotypes[$i];
 			my $subjectid = $orderedsubjects[$i];
 			if ($subjectid !~ '#') {
+				if ($debugmode >= 5) { print STDOUT "getting pedigree infor for $subjectid\n"; }			## DEBUG
 				my ($familyid, $father, $mother, $sex, $relation, $desiredgeno) = @{$subjects{$subjectid}};
 				if (!exists $checkfamilies{$familyid}) {									# initialize family data
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
@@ -685,7 +686,7 @@ sub readPedigree {
 		if ($_ =~ /^#/) {
 			next;						# skip header lines
 		}
-		print $log_filehandle "$_\n";
+		# print $log_filehandle "$_\n";
 		my ($familyid, $subjectid, $father, $mother, $sex, $phenotype, $relation, $desiredgeno, @other) = split("\t", $_);
 		if ($relation =~ /^father$/i) {
 			$relation = 'father';
@@ -729,6 +730,9 @@ sub parseHeader {
 	##
 	my @header = @_;
 	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
+	
+	print $log_filehandle "Samples in exome data:\n";
+	print $log_filehandle "FID\tIID\tFATHER\tMOTHER\tSEX\tRELATION\tDESIREDGENO\n";
 	for (my $i=0; $i<=$#header; $i++) {
 		my $columnname = $header[$i];
 		if ($columnname =~ /Qual/i) {
@@ -741,11 +745,12 @@ sub parseHeader {
 		# if ($columnname !~ /Qual/i && $columnname !~ /Depth/i) {
 			push(@keepcolumns, $i);
 		# }
-		if (defined $subjects{$columnname} || defined $subjects{"#$columnname"}) {
+		if (defined $subjects{$columnname}) {
 			push(@genotypecolumns, $i);
-			if (!defined $subjects{"#$columnname"}) {
-				push(@genotypeorder, $columnname);
-			}
+			push(@genotypeorder, $columnname);
+			print $log_filehandle ${$subjects{"$columnname"}}[0]."\t$columnname\t".join("\t", @{$subjects{"$columnname"}}[1..scalar(@{$subjects{"$columnname"}})-1])."\n";
+		} elsif (defined $subjects{"#$columnname"}) {
+			print $log_filehandle ${$subjects{"#$columnname"}}[0]."\t#$columnname\t".join("\t", @{$subjects{"#$columnname"}}[1..scalar(@{$subjects{"#$columnname"}})-1])."\n";
 		}
 		if ($columnname =~ /Freqin/i) {
 			if ($columnname =~ /FreqinCMG/i) {
@@ -842,7 +847,7 @@ sub checkGenoMatch {
 				$ismatch = 1;
 			}
 		} elsif ($desiredgeno eq 'notalt') {
-			if (!defined $altalleles{$alleles[0]} || !defined $altalleles{$alleles[1]}) {
+			if ($alleles[0] eq $ref || $alleles[1] eq $ref) {
 				$ismatch = 1;
 			}
 		} elsif ($desiredgeno eq 'notref') {
@@ -855,9 +860,9 @@ sub checkGenoMatch {
 			}
 		}
 	}
-	# if ($debugmode >= 3) {
-		# print STDOUT "$vartype	geno=$genotype	desiredgeno=$desiredgeno	ref=$ref	alt=$alt	genoalleles=@alleles	ismatch=$ismatch\n";				# DEBUG
-	# }
+	if ($debugmode >= 5) {
+		print STDOUT "$vartype	geno=$genotype	desiredgeno=$desiredgeno	ref=$ref	alt=$alt	genoalleles=@alleles	ismatch=$ismatch\n";				# DEBUG
+	}
 	return $ismatch;
 }
 
