@@ -46,9 +46,7 @@ print $log_filehandle "input=$inputfile\noutput=$outputfile\nsubjectreq=$subject
 printParamstoLog($log_filehandle, $minhits, $maxmismatchesperfamily, $mindp, $minGQ, $isNhit, join(" ", keys %GVStoexclude), join(" ", keys %allowedGATKfilters), $mafcutoff, $cmgfreqcutoff, $inheritmodel);
 
 ###################### READ PEDIGREE/SUBJECT DATA ###################### 
-my ($countuniquefamilies_hash_ref, $orderedsubjects_ref, $subjects_ref, $countuniquefamilies) = readPedigree($subjectdeffile, $log_filehandle);
-my %countuniquefamilies_hash = %{$countuniquefamilies_hash_ref};
-my @orderedsubjects = @{$orderedsubjects_ref};
+my $subjects_ref = readPedigree($subjectdeffile, $log_filehandle);
 my %subjects = %{$subjects_ref};
 	
 ###################### BEGIN READING INPUT and HEADER ###################### 
@@ -90,19 +88,32 @@ my @genotypecolumns = @{$genotypecolumns_ref};
 my @qualcolumns = @{$qualcolumns_ref};
 my @dpcolumns = @{$dpcolumns_ref};
 my @keepcolumns = @{$keepcolumns_ref};
-@orderedsubjects = @{$genotypeorder_ref};
+my @orderedsubjects = @{$genotypeorder_ref};
 
 # Check that user input corresponds to input data files
 # if (scalar(@genotypecolumns) != scalar(@orderedsubjects)) {
 # 	die "Your input subject definition file ($subjectdeffile) lists a different number of subjects (".scalar(@orderedsubjects).") than are contained (".scalar(@genotypecolumns).") in the input data file ($inputfile)\n";
 # } 
 
+# delete subjects from pedigree list if their exome is not in the input data file
+my %countuniquefamilies_hash;
+foreach my $id (keys %subjects) {
+	if (!grep(/^$id$/, @orderedsubjects)) {
+		delete $subjects{$id};
+	} else {
+		# $subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
+		my $familyid = ${$subjects{$id}}[0];
+		my $relation = ${$subjects{$id}}[4];
+		push(@{$countuniquefamilies_hash{$familyid}}, $relation);
+	}
+}
+my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 
 ###################### PRINT HEADER FOR OUTPUT #############################
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -123,7 +134,7 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
 	
 	if ($debugmode >= 3) {
 		print STDOUT "\n";
@@ -139,7 +150,7 @@ while ( <$input_filehandle> ) {
 			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
 		# 	if ($chr < 2) {
 		# 		next;
@@ -376,7 +387,7 @@ while ( <$input_filehandle> ) {
 				$data = join("	", @line);
 			} else {
 				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -676,10 +687,9 @@ sub printParamstoLog {
 
 sub readPedigree {
 	my ($subjectdeffile, $log_filehandle) = @_;
-	my (%countuniquefamilies_hash, @orderedsubjects, %subjects);
+	my %subjects;
 	my %validvalues = (1 => 1, 2 => 1, -9 => 1, 0 => 1);
 	
-	########## Order of subjects in this file must correspond to order of genotype columns
 	open (SUBJECTS, "$subjectdeffile") or die "Cannot read $subjectdeffile: $!.\n";
 	while (<SUBJECTS>) {
 		$_ =~ s/\s+$//;					# Remove line endings
@@ -707,21 +717,17 @@ sub readPedigree {
 			die "$familyid	$subjectid has an illegal sex value ($sex)\n";
 		}
 		$subjects{$subjectid} = [$familyid, $father, $mother, $sex, $relation, $desiredgeno];
-		push(@orderedsubjects, $subjectid);
-		if ($subjectid !~ '#') {
-			push(@{$countuniquefamilies_hash{$familyid}}, $relation);
-		} else {
+		# if ($subjectid !~ '#') {
+			# push(@{$countuniquefamilies_hash{$familyid}}, $relation);
+		# } 
+		if ($subjectid =~ '#') {
 			print $log_filehandle "$subjectid is being skipped in this analysis\n";
 		}
 	}
 	close SUBJECTS;
-	my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 	print $log_filehandle "\n";
 	
-	if ($debugmode >= 1) {
-		print STDOUT "Read in $countuniquefamilies families from $subjectdeffile: subject data order: @orderedsubjects\n";
-	}
-	return (\%countuniquefamilies_hash, \@orderedsubjects, \%subjects, $countuniquefamilies);
+	return (\%subjects);
 }
 
 sub parseHeader {
@@ -1077,7 +1083,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -1096,6 +1102,7 @@ sub parse_vcf_byline {
 	$freqinOutside = ${$infofields_ref}{'AFPOP'};
 	$clinical = ${$infofields_ref}{'CA'};
 	$kegg = ${$infofields_ref}{'KP'};
+	$caddphred = ${$infofields_ref}{'cPhred'};
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
 	
@@ -1147,7 +1154,7 @@ sub parse_vcf_byline {
 	# if ($debugmode >= 4) {
 	# 	print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
 	# }
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg);
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
 }
 
 sub parse_SeattleSeqAnnotation134_byline {
