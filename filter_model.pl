@@ -1132,7 +1132,13 @@ sub parse_vcf_byline {
 		if ($subject eq './.' || $subject eq '.') {
 			push(@subjectdps, 0);
 			push(@subjectquals, 0);
+		} elsif ($subject eq '0/0') {
+			push(@subjectdps, 30);
+			push(@subjectquals, 99);
 		} else {
+			if ($debugmode >= 2) {
+				print "$chr:$pos subject=$subject\tsubjectdata=@subjectdata; pindel_ad=$pindel_ad\n";
+			}
 			if (defined $dpcolnum) {
 				if ($altdp == 0) {
 					push(@subjectdps, $subjectdata[$dpcolnum]);
@@ -1141,8 +1147,16 @@ sub parse_vcf_byline {
 					push(@subjectdps, ($dp4[0]+$dp4[1]+$dp4[2]+$dp4[3]));
 				}
 			} else {
-				my ($pindel_refd, $pindel_altd) = split(",", $subjectdata[$pindel_ad]);
-				push(@subjectdps, ($pindel_refd+$pindel_altd));
+				if (defined $pindel_ad && defined $subjectdata[$pindel_ad]) {
+					my ($pindel_refd, $pindel_altd) = split(",", $subjectdata[$pindel_ad]);
+					if (defined $pindel_refd && defined $pindel_altd) {
+						push(@subjectdps, ($pindel_refd+$pindel_altd));
+					} else {
+						push(@subjectdps, 30);
+					}
+				} else {
+					push(@subjectdps, 30);
+				}
 			}
 			if (defined $gqcolnum) {
 				push(@subjectquals, $subjectdata[$gqcolnum]);
