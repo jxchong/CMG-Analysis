@@ -147,7 +147,7 @@ while ( <$input_filehandle> ) {
 		$freqinCMG = $line[$freqinCMGcol];		
 		$freqinOutside = $line[$freqinOutsidecol];
 		if ($debugmode >= 3) {
-			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
+			print STDOUT "\nLooking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
 		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred) = parse_vcf_byline(\@genotypecolumns, @line);
@@ -309,6 +309,8 @@ while ( <$input_filehandle> ) {
 							$thisfamilyparentsmatch += 1;																# counts matches in the parents
 						}
 						if ($debugmode >= 3) { print STDOUT "$member in $familyid has the correct genotype\n"; }
+					} else {
+						if ($debugmode >= 3) { print STDOUT "$member in $familyid does not have the correct genotype: failsquality=$failsquality, $thisfamily{$member}\n"; }
 					}
 				}
 				
@@ -654,7 +656,7 @@ sub checkandstoreOptions {
 		%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 	} 
 	if ($excludeGVSfunction eq 'default') {
-		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous synonymous 3-prime-UTR 5-prime-UTR downstream-gene upstream-gene);
+		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous synonymous 3-prime-UTR 5-prime-UTR downstream-gene upstream-gene non-coding-exon);
 	} elsif ($excludeGVSfunction eq 'NA')  {
 		%GVStoexclude = map {$_ => 1} qw(NA);
 	} else {
@@ -1136,8 +1138,8 @@ sub parse_vcf_byline {
 			push(@subjectdps, 30);
 			push(@subjectquals, 99);
 		} else {
-			if ($debugmode >= 2) {
-				print "$chr:$pos subject=$subject\tsubjectdata=@subjectdata; pindel_ad=$pindel_ad\n";
+			if ($debugmode >= 5) {
+				print "$chr:$pos subject=$subject;subjectdata=@subjectdata; pindel_ad=$pindel_ad\n";
 			}
 			if (defined $dpcolnum) {
 				if ($altdp == 0) {
