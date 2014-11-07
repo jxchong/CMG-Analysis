@@ -14,7 +14,7 @@ use Pod::Usage;
 use Moose;
 
 my $help = 0;
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -27,6 +27,7 @@ GetOptions(
 	'excludefunction=s' => \$excludeGVSfunction,
 	'model:s' => \$inheritmodel,
 	'mafcutoff:f' => \$mafcutoff,
+	'exaccutoff:f' => \$exaccutoff,
 	'errorcutoff:f' => \$cmgfreqcutoff,
 	'dp:f' => \$mindp,
 	'gq:f' => \$minGQ,
@@ -36,8 +37,8 @@ GetOptions(
 pod2usage(-verbose=>1, -exitval=>1) if $help;
 
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
-	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
+	$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
 my %allowedGATKfilters = %{$allowedGATKfilters_ref};
 my %GVStoexclude = %{$GVStoexclude_ref};
 
@@ -83,7 +84,7 @@ $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("	", $headerline);
 my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
 print "Input file type is $inputfiletype\n";
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref, $genotypeorder_ref) = parseHeader(@header);
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref, $genotypeorder_ref) = parseHeader(@header);	# $vepannocol, 
 my @genotypecolumns = @{$genotypecolumns_ref};
 my @qualcolumns = @{$qualcolumns_ref};
 my @dpcolumns = @{$dpcolumns_ref};
@@ -113,7 +114,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	clinAssoc	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	KEGG	VEP	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -134,7 +135,7 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred);
 	
 	if ($debugmode >= 3) {
 		print STDOUT "\n";
@@ -150,7 +151,7 @@ while ( <$input_filehandle> ) {
 			print STDOUT "\nLooking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
 		# 	if ($chr < 2) {
 		# 		next;
@@ -159,7 +160,7 @@ while ( <$input_filehandle> ) {
 		# 	}			
 		# }
 		if ($debugmode >= 3) {
-			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC\n";
 		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -192,6 +193,15 @@ while ( <$input_filehandle> ) {
 		$countcommonvariants++;
 		if ($debugmode >= 4) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
 	}
+	my @exacfreqs = split(",", $freqinExAC);
+	foreach my $exacaltfreq (@exacfreqs) {																							# if any of the allele-specific ExAC frequencies
+		if ($exacaltfreq > $exaccutoff) {
+			$iscommon = 1;
+			$countcommonvariants++;
+			if ($debugmode >= 4) { print STDOUT "rejecting b/c one of the alt allele freqs from freqinExAC $freqinExAC >= $exaccutoff\n"; }			## DEBUG
+		}
+	}
+
 	my $resultfunctionfilter = shouldfunctionFilter(\%GVStoexclude, $functionimpact);
 	my $resultGATKfilter = passGATKfilters(\%allowedGATKfilters, $filterset);
 	if ($resultfunctionfilter == 1) {
@@ -223,7 +233,7 @@ while ( <$input_filehandle> ) {
 			my $genotype = $subjectgenotypes[$i];
 			my $subjectid = $orderedsubjects[$i];
 			if ($subjectid !~ '#') {
-				if ($debugmode >= 5) { print STDOUT "getting pedigree infor for $subjectid\n"; }			## DEBUG
+				if ($debugmode >= 5) { print STDOUT "getting pedigree info for $subjectid\n"; }			## DEBUG
 				my ($familyid, $father, $mother, $sex, $relation, $desiredgeno) = @{$subjects{$subjectid}};
 				if (!exists $checkfamilies{$familyid}) {									# initialize family data
 					my @familymembers = @{$countuniquefamilies_hash{$familyid}};
@@ -388,8 +398,8 @@ while ( <$input_filehandle> ) {
 			if ($inputfiletype ne 'vcf') {
 				$data = join("	", @line);
 			} else {
-				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
+				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -595,7 +605,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 
 sub checkandstoreOptions {
 	my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+		$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode) = @_;
 	my (%allowedGATKfilters, %GVStoexclude);
 	
@@ -632,6 +642,9 @@ sub checkandstoreOptions {
 	if (!defined $mafcutoff) {
 		$mafcutoff = 0.01;
 	}
+	if (!defined $exaccutoff) {
+		$exaccutoff = 0.01;
+	}
 	if (!defined $cmgfreqcutoff) {
 		$cmgfreqcutoff = 0.2;
 	} 
@@ -665,7 +678,7 @@ sub checkandstoreOptions {
 	
 	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+		$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode, \%allowedGATKfilters, \%GVStoexclude, $logfile);
 }
 
@@ -683,6 +696,7 @@ sub printParamstoLog {
 	print $log_filehandle "Excluding all variants with annotations: $gvstoexclude_string\n";
 	print $log_filehandle "Only allow variants with GATK filter: $allowedgatk_string\n";
 	print $log_filehandle "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
+	print $log_filehandle "Excluding variants with MAF>$exaccutoff in ExAC\n";
 	print $log_filehandle "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
 	print $log_filehandle "Special analysis? $inheritmodel\n";
 }
@@ -737,7 +751,7 @@ sub parseHeader {
 	# add code to check for undefined columns
 	##
 	my @header = @_;
-	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
+	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, $vepannocol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
 	
 	print $log_filehandle "Samples in exome data:\n";
 	print $log_filehandle "FID\tIID\tFATHER\tMOTHER\tSEX\tRELATION\tDESIREDGENO\n";
@@ -776,9 +790,13 @@ sub parseHeader {
 			$gatkfiltercol = $i;
 		} elsif ($columnname =~ /FILTER/i) {
 			$gatkfiltercol = $i;
+		} elsif ($columnname =~ /ExAC.AF/i) {
+			$freqinExACcol = $i;
+		} elsif ($columnname =~ /ExAC.CSQ/i) {
+			$vepannocol = $i;
 		}
 	}
-	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns, \@genotypeorder);
+	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns, \@genotypeorder);
 }
 
 sub passGATKfilters {
@@ -1085,7 +1103,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -1102,11 +1120,19 @@ sub parse_vcf_byline {
 	$cdnapos = ${$infofields_ref}{'CDP'};
 	$freqinCMG = ${$infofields_ref}{'AFCMG'};
 	$freqinOutside = ${$infofields_ref}{'AFPOP'};
+	$vepanno = ${$infofields_ref}{'ExAC.CSQ'};
 	$clinical = ${$infofields_ref}{'CA'};
 	$kegg = ${$infofields_ref}{'KP'};
 	$caddphred = ${$infofields_ref}{'cPhred'};
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
+	
+	
+	if (!exists ${$infofields_ref}{'ExAC.AF'}) {
+		$freqinExAC = 0;
+	} else {
+		$freqinExAC = ${$infofields_ref}{'ExAC.AF'};
+	}
 	
 	my @format = split(":", $line[8]);
 	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_ad);
@@ -1170,7 +1196,7 @@ sub parse_vcf_byline {
 	# if ($debugmode >= 4) {
 	# 	print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
 	# }
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $clinical, $kegg, $caddphred);
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred);
 }
 
 sub parse_SeattleSeqAnnotation134_byline {
