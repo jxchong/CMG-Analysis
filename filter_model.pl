@@ -114,7 +114,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	KEGG	VEP	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
