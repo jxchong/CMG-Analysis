@@ -102,7 +102,7 @@ if ($inputfiletype eq 'vcf') {
 	}
 	print OUT join("\t", @header)."\n";
 } else {
-	print OUT join("\t", @header)."\tgeneMIM\tphenoMIM\n";
+	print OUT join("\t", @header)."\tgeneMIM\tphenoOMIM\n";
 }
 
 open (FILE, "zcat $inputfile |") or die "Cannot read $inputfile file: $!.\n";

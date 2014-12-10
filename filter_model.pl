@@ -114,7 +114,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	geneMIM	phenoOMIM	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -135,7 +135,7 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 	
 	if ($debugmode >= 3) {
 		print STDOUT "\n";
@@ -151,7 +151,7 @@ while ( <$input_filehandle> ) {
 			print STDOUT "\nLooking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
 		# 	if ($chr < 2) {
 		# 		next;
@@ -160,7 +160,7 @@ while ( <$input_filehandle> ) {
 		# 	}			
 		# }
 		if ($debugmode >= 3) {
-			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC\n";
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, OMIM: $geneMIM, $phenoOMIM\n";
 		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -399,7 +399,7 @@ while ( <$input_filehandle> ) {
 				$data = join("	", @line);
 			} else {
 				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$kegg\t".join("\t", @subjectgenotypes);	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -1050,7 +1050,7 @@ sub retrieveVCFfields {
 	my ($vcfcolumn, $vcfcoltype) = @_;
 	my @columncontents;
 	my %vcffields;
-	foreach my $name (qw(GL FG CP CG PP AAC PP CDP AFCMG AFPOP CA KP PH)) {
+	foreach my $name (qw(GL FG CP CG PP AAC PP CDP AFCMG AFPOP CA KP PH phenoOMIM geneMIM)) {
 		$vcffields{$name} = '.';
 	}
 	
@@ -1103,7 +1103,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -1124,6 +1124,9 @@ sub parse_vcf_byline {
 	$clinical = ${$infofields_ref}{'CA'};
 	$kegg = ${$infofields_ref}{'KP'};
 	$caddphred = ${$infofields_ref}{'cPhred'};
+	$geneMIM = ${$infofields_ref}{'geneMIM'};
+	$phenoOMIM = ${$infofields_ref}{'phenoOMIM'};
+	
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
 	
@@ -1193,10 +1196,10 @@ sub parse_vcf_byline {
 			}
 		}
 	}
-	# if ($debugmode >= 4) {
-	# 	print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside\n";			## DEBUG
-	# }
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred);
+	if ($debugmode >= 4) {
+		print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, OMIM: $geneMIM, $phenoOMIM\n";			## DEBUG
+	}
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 }
 
 sub parse_SeattleSeqAnnotation134_byline {
