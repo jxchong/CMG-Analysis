@@ -632,7 +632,7 @@ sub checkandstoreOptions {
 	# 	$minGQ = 0;
 	# } else {
 		if (!defined $mindp) {
-			$mindp = 8;
+			$mindp = 6;
 		}
 		if (!defined $minGQ) {
 			$minGQ = 20;
