@@ -93,7 +93,6 @@ sub call2vcfgeno {
 
 
 
-
 ################################################################################################################
 ############################################ Documentation #####################################################
 ################################################################################################################
@@ -116,13 +115,21 @@ perl B<xxxx.pl> I<[options]>
 
 =over 4
 
-=item B<--in> F<input file>	
+=item B<--tsv> F<input tsv file>	
 
-	input file
+	input tsv file created by filter_model.pl
 
 =item B<--out> F<output file>
 
 	name of output file
+
+=item B<--keepfamily> F<string>
+
+	string to extract from FamilieswHits column
+
+=item B<--keepsample> F<string>
+
+	sampleID column to keep from vcf
 
 =item B<--help> I<help>
 
