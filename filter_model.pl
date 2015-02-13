@@ -114,7 +114,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	AltFreqinCMG	AltFreqOutside	AltFreqExAC	clinAssoc	geneMIM	phenoOMIM	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	AltFreqExAC	clinAssoc	geneMIM	phenoOMIM	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -181,27 +181,20 @@ while ( <$input_filehandle> ) {
 	}
 			
 	my ($iserror, $iscommon) = (0,0);
-	$freqinCMG = $freqinCMG/100;							# store allele freq as percentage, so convert back to frequency
-	$freqinOutside = $freqinOutside/100;					# store allele freq as percentage, so convert back to frequency
-	if ($freqinCMG >= $cmgfreqcutoff) {
+	
+	if (checkFrequencies($freqinCMG, $cmgfreqcutoff, 'CMG')) {
 		$iserror = 1;
 		$counterrorvariants++;
-		if ($debugmode >= 4) { print STDOUT "rejecting b/c freqinCMG $freqinCMG >= $cmgfreqcutoff\n"; } 			## DEBUG
 	}
-	if ($freqinOutside > $mafcutoff) {
+	if (checkFrequencies($freqinOutside, $mafcutoff, 'ESP1KG')) {
 		$iscommon = 1;
 		$countcommonvariants++;
-		if ($debugmode >= 4) { print STDOUT "rejecting b/c freqinOutside $freqinOutside >= $mafcutoff\n"; }			## DEBUG
 	}
-	my @exacfreqs = split(",", $freqinExAC);
-	foreach my $exacaltfreq (@exacfreqs) {																							# if any of the allele-specific ExAC frequencies
-		if ($exacaltfreq > $exaccutoff) {
-			$iscommon = 1;
-			$countcommonvariants++;
-			if ($debugmode >= 4) { print STDOUT "rejecting b/c one of the alt allele freqs from freqinExAC $freqinExAC >= $exaccutoff\n"; }			## DEBUG
-		}
+	if (checkFrequencies($freqinExAC, $exaccutoff, 'ExAC')) {
+		$iscommon = 1;
+		$countcommonvariants++;
 	}
-
+	
 	my $resultfunctionfilter = shouldfunctionFilter(\%GVStoexclude, $functionimpact);
 	my $resultGATKfilter = passGATKfilters(\%allowedGATKfilters, $filterset);
 	if ($resultfunctionfilter == 1) {
@@ -646,7 +639,7 @@ sub checkandstoreOptions {
 		$exaccutoff = 0.01;
 	}
 	if (!defined $cmgfreqcutoff) {
-		$cmgfreqcutoff = 0.2;
+		$cmgfreqcutoff = 0.05;
 	} 
 	if (!defined $inheritmodel) {
 		$inheritmodel = 'NA';
@@ -1201,6 +1194,31 @@ sub parse_vcf_byline {
 	}
 	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 }
+
+
+
+sub checkFrequencies {
+	my ($controlfreqs, $cutoff, $source) = @_;
+	
+	my @controlfreqs = split(",", $controlfreqs);
+	my $reject_for_freq = 1;
+	
+	foreach my $reffreq (@controlfreqs) {	
+		if ($reffreq eq '.') {
+			next;
+		}
+		if ($source eq 'CMG' | $source eq 'ESP1KG') {
+			$reffreq = $reffreq/100;			# store allele freq as percentage, so convert back to frequency
+		}
+		if ($reffreq <= $cutoff) {
+			$reject_for_freq = 0;
+			if ($debugmode >= 4) { print STDOUT "rejecting b/c one of the alt allele freqs from $source ($reffreq) >= $cutoff\n"; }			## DEBUG
+		}
+	}
+	return ($reject_for_freq);
+}
+
+
 
 sub parse_SeattleSeqAnnotation134_byline {
 	# if ($inputfile =~ m/snps/) {
