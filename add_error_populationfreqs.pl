@@ -107,24 +107,23 @@ while ( <FILE> ) {
 		$workingchr = $chr;
 	} 
 	
-	my ($errorfreq, $maxpopmaf) = (0, 0);
+	my (@errorfreq, @maxpopmaf);
 
 	my @altalleles = split(",", $alt);									# in case there are multi-allelic SNPs
 	for (my $i=0; $i<=$#altalleles; $i++) {
 		my $lookup = "$pos.$ref.$altalleles[$i]";
 		if (exists $chr_contents{$lookup}{'pop'}) {
-			# simplification; take the max frequency among all possible alternate alleles
-			if ($chr_contents{$lookup}{'error'} > $errorfreq) {
-				$errorfreq = $chr_contents{$lookup}{'error'};
-			}
-			if ($chr_contents{$lookup}{'pop'} > $maxpopmaf) {
-				$maxpopmaf = $chr_contents{$lookup}{'pop'};
-			}
-		}	
+			push(@errorfreq, sprintf("%.4f", $chr_contents{$lookup}{'error'}));
+			push(@maxpopmaf, sprintf("%.4f", $chr_contents{$lookup}{'pop'}));
+		} else {
+			push(@errorfreq, '.');
+			push(@maxpopmaf, '.');
+		}
 	}
 	
-	my $afpop = sprintf("%.4f", $maxpopmaf);
-	my $afcmg = sprintf("%.4f", $errorfreq);
+	my $afpop = join(",", @maxpopmaf);
+	my $afcmg = sprintf("%.4f", @errorfreq);
+	
 	if ($inputfiletype eq 'vcf') {
 		print OUT join("\t", @line[0..($vcfinfocol-1)]);
 		print OUT "\t$line[$vcfinfocol];AFCMG=$afcmg;AFPOP=$afpop\t";
