@@ -27,7 +27,7 @@ if (!defined $inputfile) {
 
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
-my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.2013-04-10.wESPv2.tsv.gz";
+my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.2013-11-26.tsv.gz";
 
 if (!-e $errorMAFfile) {
 	die "Cannot read from reference data: $errorMAFfile :$?\n";
@@ -122,7 +122,7 @@ while ( <FILE> ) {
 	}
 	
 	my $afpop = join(",", @maxpopmaf);
-	my $afcmg = sprintf("%.4f", @errorfreq);
+	my $afcmg = join(",", @errorfreq);
 	
 	if ($inputfiletype eq 'vcf') {
 		print OUT join("\t", @line[0..($vcfinfocol-1)]);
