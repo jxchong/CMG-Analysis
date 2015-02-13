@@ -116,8 +116,8 @@ while ( <FILE> ) {
 			push(@errorfreq, sprintf("%.4f", $chr_contents{$lookup}{'error'}));
 			push(@maxpopmaf, sprintf("%.4f", $chr_contents{$lookup}{'pop'}));
 		} else {
-			push(@errorfreq, '.');
-			push(@maxpopmaf, '.');
+			push(@errorfreq, '0');
+			push(@maxpopmaf, '0');
 		}
 	}
 	
