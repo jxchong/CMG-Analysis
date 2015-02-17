@@ -168,6 +168,7 @@ while ( <$input_filehandle> ) {
 	@subjectgenotypes = @{$subjgeno_ref};
 	@subjectdps = @{$subjdps_ref};
 	@subjectquals = @{$subjquals_ref};
+	my $naltalleles = scalar(split(",", $alt));
 	
 	if ($debugmode >= 4) {
 		print STDOUT "genotypes=@subjectgenotypes\n";
@@ -181,20 +182,28 @@ while ( <$input_filehandle> ) {
 	}
 			
 	my ($iserror, $iscommon) = (0,0);
+	my $track_common_alleles_ref = [(0) x $naltalleles];
 	
-	if (checkFrequencies($freqinCMG, $cmgfreqcutoff, 'CMG')) {
+	checkFrequencies($freqinOutside, $mafcutoff, 'ESP1KG', $track_common_alleles_ref);
+	if ($debugmode >= 4) { print STDOUT "after checking ESP1KG, common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG			
+	checkFrequencies($freqinExAC, $exaccutoff, 'ExAC', $track_common_alleles_ref);
+	if ($debugmode >= 4) { print STDOUT "after checking ExAC, common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG			
+
+	# if frequencies for all alleles at this locus are above cutoff in at least one control population, reject		
+	my $freqcheck;
+	map { $freqcheck += $_ } @{$track_common_alleles_ref};
+	if ($freqcheck == $naltalleles) {		# then all of the alleles are common
+		$iscommon = 1;
+		$countcommonvariants++;
+		if ($debugmode >= 4) { print STDOUT "based on frequency check across controls, freqcheck=$freqcheck; common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG			
+	}
+		
+	if (checkFrequencies($freqinCMG, $cmgfreqcutoff, 'CMG', $track_common_alleles_ref)) {
 		$iserror = 1;
 		$counterrorvariants++;
 	}
-	if (checkFrequencies($freqinOutside, $mafcutoff, 'ESP1KG')) {
-		$iscommon = 1;
-		$countcommonvariants++;
-	}
-	if (checkFrequencies($freqinExAC, $exaccutoff, 'ExAC')) {
-		$iscommon = 1;
-		$countcommonvariants++;
-	}
-	
+
+
 	my $resultfunctionfilter = shouldfunctionFilter(\%GVStoexclude, $functionimpact);
 	my $resultGATKfilter = passGATKfilters(\%allowedGATKfilters, $filterset);
 	if ($resultfunctionfilter == 1) {
@@ -1198,23 +1207,36 @@ sub parse_vcf_byline {
 
 
 sub checkFrequencies {
-	my ($controlfreqs, $cutoff, $source) = @_;
+	my ($controlfreqs, $cutoff, $source, $track_common_alleles_ref) = @_;
 	
 	my @controlfreqs = split(",", $controlfreqs);
+	my $count_rare_alleles = 0;
 	my $reject_for_freq = 1;
 	
-	foreach my $reffreq (@controlfreqs) {	
-		if ($reffreq eq '.') {
+	for (my $i=0;$i<=$#controlfreqs;$i++) {
+		my $reffreq = $controlfreqs[$i];
+		if ($reffreq eq '.' ) {
+			$count_rare_alleles++;
 			next;
-		}
+		} 
 		if ($source eq 'CMG' | $source eq 'ESP1KG') {
 			$reffreq = $reffreq/100;			# store allele freq as percentage, so convert back to frequency
 		}
 		if ($reffreq <= $cutoff) {
-			$reject_for_freq = 0;
-			if ($debugmode >= 4) { print STDOUT "rejecting b/c one of the alt allele freqs from $source ($reffreq) >= $cutoff\n"; }			## DEBUG
+			$count_rare_alleles++;
+			if ($debugmode >= 4) { print STDOUT "allele $i+1 freq from $source ($reffreq) <= cutoff $cutoff\n"; }			## DEBUG
+		} else {
+			${$track_common_alleles_ref}[$i] = 1;
+			if ($debugmode >= 4) { print STDOUT "allele $i+1 is more common in $source ($reffreq) than cutoff $cutoff\n"; }			## DEBUG			
 		}
 	}
+		
+	if ($count_rare_alleles >= 1) {
+		$reject_for_freq = 0;
+	}
+	
+	if ($debugmode >= 4) { print STDOUT "reject this variant based on control frequencies in $source? $reject_for_freq\n"; }			## DEBUG
+	
 	return ($reject_for_freq);
 }
 
