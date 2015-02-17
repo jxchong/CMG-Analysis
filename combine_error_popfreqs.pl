@@ -11,6 +11,7 @@ use strict;
 use warnings;
 use Getopt::Long;
 use List::Util qw(sum);
+use Data::Dumper;
 
 my ($inputfile, $outputfile, $capturearray, $tempstartbp, $tempendbp);
 
@@ -37,9 +38,9 @@ my $errorpath = "$commonvarpath/systematic_error/2013_nov/systematic_errors.vcf.
 
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
-print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\n";
-foreach my $currchr (((1..22), "X", "Y", "M")) {
-# foreach my $currchr ((22)) {
+print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\tAltFreqSourceDB\n";
+# foreach my $currchr (((1..22), "X", "Y", "M")) {
+foreach my $currchr ((17)) {
 	print "Reading in chr $currchr data\n";
 	my $maxaltAFs_ref = readData($currchr);
 	my %chr_contents = %{$maxaltAFs_ref};
@@ -52,12 +53,15 @@ foreach my $currchr (((1..22), "X", "Y", "M")) {
 				$errorfreq = ${$freq_ref}{'error'};
 			}
 			my $maxaltAF = 0;
-			my $altAF_sourceDB = "";
+			my $altAF_sourceDB = '';
+			my $altAF_popsource = '';
 			if (defined ${$freq_ref}{'pop'}) {
 				$maxaltAF = ${$freq_ref}{'pop'};
 				$altAF_sourceDB = ${$freq_ref}{'DB'};
+				$altAF_popsource = ${$freq_ref}{'POPsource'};
 			}
-			print OUT "$currchr\t$pos\t$pos\t$ref\t$alt\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxaltAF*100)."\t$altAF_sourceDB\n";	
+			# print "dealing with $currchr\t$pos\t$lookup\n";
+			print OUT "$currchr\t$pos\t$pos\t$ref\t$alt\t".sprintf("%.4f", $errorfreq*100)."\t".sprintf("%.4f", $maxaltAF*100)."\t$altAF_sourceDB-$altAF_popsource\n";	
 		}
 	}
 }
@@ -78,21 +82,27 @@ sub readData {
 	my $startbp = 1;
 	my $endbp = 270000000;
 	my ($startsubset, $endsubset) = (1, 270000000);
-	my $incrementbp = 30000000;
-	
-	# ($startsubset, $endsubset) = (16287372, 16287372);
+	# my $incrementbp = 30000000;
+
+	my $incrementbp = 10000000;
+	($startbp, $endbp) = (10534960, 10534960);
 	# ($startsubset, $endsubset) = (1, 100000);
 	
+
 	for (my $startsubset=$startbp; $startsubset<=$endbp; $startsubset+=$incrementbp) {
 		$endsubset = $startsubset+$incrementbp;
-		print STDOUT "Reading 1KG data: tabix $errorpath $currchr:$startsubset-$endsubset\n";
+		print STDOUT "Reading 1KG data: tabix $thousandgenomesfile $currchr:$startsubset-$endsubset\n";
 		save_parse_1KG($currchr, $startsubset, $endsubset, $maxaltAFs_ref);
-		print STDOUT "Reading ExAC data: tabix $errorpath $currchr:$startsubset-$endsubset\n";
+		
+		print STDOUT "Reading ExAC data: tabix $exacpath $currchr:$startsubset-$endsubset\n";
 		save_parse_exac($currchr, $startsubset, $endsubset, $maxaltAFs_ref);
-		print STDOUT "Reading ESP data: tabix $errorpath $currchr:$startsubset-$endsubset\n";
+		
+		print STDOUT "Reading ESP data: tabix /nfs/home/jxchong/references/ESP6500SI-V2.chr$currchr.snps_indels.vcf.gz $currchr:$startsubset-$endsubset\n";
 		save_parse_esp($currchr, $startsubset, $endsubset, $maxaltAFs_ref);
+		
 		print STDOUT "Reading systematic_errors data: tabix $errorpath $currchr:$startsubset-$endsubset\n";
 		save_parse_errors($currchr, $startsubset, $endsubset, $maxaltAFs_ref);
+		
 		print STDOUT "\n";
 	}
 	
@@ -120,9 +130,13 @@ sub save_parse_esp {
 		$_ =~ s/\s+$//;	
 		my @popaltAFs;
 		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
-		my @altalleles = split(",", $alt);								
+		my @altalleles = split(",", $alt);	
 		my %popaltAFs;
-		@popaltAFs{@altalleles} = (0) x scalar(@altalleles);
+		# @popaltAFs{@altalleles} = (0) x scalar(@altalleles);
+		foreach my $altallele (@altalleles) {
+			$popaltAFs{$altallele} = {altAF => 0, POPsource => ''};
+		}
+
 		my @populations = qw(EA AA);
 		foreach my $population (@populations) {
 			my $ACfield = $population."_AC";
@@ -135,7 +149,6 @@ sub save_parse_esp {
 		store_maxpopaltAF($ref, $varpos, \@altalleles, \%popaltAFs, $maxaltAFs_ref, $DBname);
 	}
 }
-
 
 sub save_parse_exac {
 	my ($currchr, $startbp, $endbp, $maxaltAFs_ref) = @_;
@@ -154,7 +167,10 @@ sub save_parse_exac {
 		my ($chr, $varpos, $rsid, $ref, $alt, @vardata) = split("\t", $_);
 		my @altalleles = split(",", $alt);
 		my %popaltAFs;
-		@popaltAFs{@altalleles} = (0) x scalar(@altalleles);
+		# @popaltAFs{@altalleles} = (0) x scalar(@altalleles);
+		foreach my $altallele (@altalleles) {
+			$popaltAFs{$altallele} = {altAF => 0, POPsource => ''};
+		}
 		my @populations = qw(AFR AMR EAS NFE SAS);
 		foreach my $population (@populations) {
 			my $altACfield = "AC_".$population;
@@ -186,9 +202,14 @@ sub save_parse_1KG {
 		# print STDERR "Checking $chr:$varpos-$varpos alt alleles = $alt\n";
 		my @altalleles = split(",", $alt);
 		my %popaltAFs;
-		@popaltAFs{@altalleles} = (0) x scalar(@altalleles);
-		my @populations = qw(EAS SAS AFR EUR AMR);
-			
+		foreach my $altallele (@altalleles) {
+			$popaltAFs{$altallele} = {altAF => 0, POPsource => ''};
+		}
+		# @popaltAFs{@altalleles} = (0) x scalar(@altalleles);
+		# print Dumper \%popaltAFs;			 ## DEBUG
+		# exit;
+				
+		my @populations = qw(EAS SAS AFR EUR AMR);			
 		foreach my $population (@populations) {
 			my $altAFfield = $population."_AF";
 			my ($altAFfieldval) = $vardata[2] =~ m/;$altAFfield=([\d,.]+)/;
@@ -200,8 +221,9 @@ sub save_parse_1KG {
 			# 1000 genomes already has AF calculated
 			for (my $altallele_idx=0; $altallele_idx<=$#altalleles; $altallele_idx++) {
 				my $altAF = $altAFvals[$altallele_idx];
-				if ($altAF > $popaltAFs{$altalleles[$altallele_idx]}) {
-					$popaltAFs{$altalleles[$altallele_idx]} = $altAF;
+				if ($altAF > $popaltAFs{$altalleles[$altallele_idx]}{'altAF'}) {
+					$popaltAFs{$altalleles[$altallele_idx]}{'altAF'} = $altAF;
+					$popaltAFs{$altalleles[$altallele_idx]}{'POPsource'} = $population;
 					# print STDERR "$DBname: AF for $chr:$varpos allele $altalleles[$altallele_idx] (#$altallele_idx) in $population = $altAF\n";
 				}
 			}	
@@ -241,6 +263,8 @@ sub save_parse_errors {
 		}
 		if (!defined $maxaltAFs_ref->{$varpos}{$lookup}{'pop'}) {
 			$maxaltAFs_ref->{$varpos}{$lookup}{'pop'} = 0;
+			$maxaltAFs_ref->{$varpos}{$lookup}{'DB'} = '';	
+			$maxaltAFs_ref->{$varpos}{$lookup}{'POPsource'} = '';	
 		}
 	}
 }
@@ -260,8 +284,9 @@ sub determine_maxpopaltAF {
 		} else {
 			$altAF = ${$altACvals_ref}[$altallele_idx]/$totchrcount;
 		}
-		if ($altAF > $popaltAFs_ref->{$altalleles[$altallele_idx]}) {
-			$popaltAFs_ref->{$altalleles[$altallele_idx]} = $altAF;
+		if ($altAF > $popaltAFs_ref->{$altalleles[$altallele_idx]}{'altAF'}) {
+			$popaltAFs_ref->{$altalleles[$altallele_idx]}{'altAF'} = $altAF;
+			$popaltAFs_ref->{$altalleles[$altallele_idx]}{'POPsource'} = $population;
 			# print STDERR "$DBname: AF for $chr:$varpos allele $altalleles[$altallele_idx] (#$altallele_idx) in $population = $altAF\n";
 		}
 	}	
@@ -273,13 +298,16 @@ sub store_maxpopaltAF {
 	my @altalleles = @{$altalleles_ref};
 	for (my $altallele_idx=0; $altallele_idx<=$#altalleles; $altallele_idx++) {
 		my $lookup = "$ref.$altalleles[$altallele_idx]";
-		my $maxpopaltAF = $popaltAFs_ref->{$altalleles[$altallele_idx]};
+		my $maxpopaltAF = $popaltAFs_ref->{$altalleles[$altallele_idx]}{'altAF'};
+		my $maxpopname = $popaltAFs_ref->{$altalleles[$altallele_idx]}{'POPsource'};
 		if (!defined $maxaltAFs_ref->{$varpos}{$lookup}{'pop'}) {
 			$maxaltAFs_ref->{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
 			$maxaltAFs_ref->{$varpos}{$lookup}{'DB'} = $DBname;
+			$maxaltAFs_ref->{$varpos}{$lookup}{'POPsource'} = $maxpopname;
 		} elsif ($maxpopaltAF > $maxaltAFs_ref->{$varpos}{$lookup}{'pop'}) {
 			$maxaltAFs_ref->{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
 			$maxaltAFs_ref->{$varpos}{$lookup}{'DB'} = $DBname;
+			$maxaltAFs_ref->{$varpos}{$lookup}{'POPsource'} = $maxpopname;
 		}
 		if (!defined $maxaltAFs_ref->{$varpos}{$lookup}{'error'}) {
 			$maxaltAFs_ref->{$varpos}{$lookup}{'error'} = 0;
