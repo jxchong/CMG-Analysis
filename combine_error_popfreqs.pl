@@ -39,8 +39,8 @@ my $errorpath = "$commonvarpath/systematic_error/2013_nov/systematic_errors.vcf.
 
 open (OUT, ">$outputfile") or die "Cannot write to $outputfile: $!.\n";
 print OUT "#chr\tstart\tend\tref\talt\tPrctAltFreqinCMG\tPrctAltFreqinOutsidePop\tAltFreqSourceDB\n";
-# foreach my $currchr (((1..22), "X", "Y", "M")) {
-foreach my $currchr ((17)) {
+foreach my $currchr (((1..22), "X", "Y", "M")) {
+# foreach my $currchr ((17)) {
 	print "Reading in chr $currchr data\n";
 	my $maxaltAFs_ref = readData($currchr);
 	my %chr_contents = %{$maxaltAFs_ref};
@@ -83,12 +83,13 @@ sub readData {
 	my $startbp = 1;
 	my $endbp = 270000000;
 	my ($startsubset, $endsubset) = (1, 270000000);
-	# my $incrementbp = 30000000;
+	my $incrementbp = 30000000;
 
-	my $incrementbp = 10000000;
-	($startbp, $endbp) = (10534960, 10534960);
+	####### DEBUG ######
+	# my $incrementbp = 10000000;
+	# ($startbp, $endbp) = (10534960, 10534960);
 	# ($startsubset, $endsubset) = (1, 100000);
-	
+	#############
 
 	for (my $startsubset=$startbp; $startsubset<=$endbp; $startsubset+=$incrementbp) {
 		$endsubset = $startsubset+$incrementbp;

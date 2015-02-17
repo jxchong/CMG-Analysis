@@ -84,7 +84,7 @@ $headerline =~ s/\s+$//;					# Remove line endings
 my @header = split("	", $headerline);
 my $inputfiletype = determineInputType($headerline, $inputfile);					# SSAnnotation, vcf, or SeattleSeqAnnotation
 print "Input file type is $inputfiletype\n";
-my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref, $genotypeorder_ref) = parseHeader(@header);	# $vepannocol, 
+my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $sourceDBpopfreq, $genotypecolumns_ref, $qualcolumns_ref, $dpcolumns_ref, $keepcolumns_ref, $genotypeorder_ref) = parseHeader(@header);	
 my @genotypecolumns = @{$genotypecolumns_ref};
 my @qualcolumns = @{$qualcolumns_ref};
 my @dpcolumns = @{$dpcolumns_ref};
@@ -114,7 +114,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	AltFreqExAC	clinAssoc	geneMIM	phenoOMIM	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	OutsideFreqSourceDB	clinAssoc	geneMIM	phenoOMIM	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -135,7 +135,7 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 	
 	if ($debugmode >= 3) {
 		print STDOUT "\n";
@@ -151,7 +151,7 @@ while ( <$input_filehandle> ) {
 			print STDOUT "\nLooking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
 		# 	if ($chr < 2) {
 		# 		next;
@@ -160,7 +160,7 @@ while ( <$input_filehandle> ) {
 		# 	}			
 		# }
 		if ($debugmode >= 3) {
-			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, OMIM: $geneMIM, $phenoOMIM\n";
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";
 		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -184,10 +184,8 @@ while ( <$input_filehandle> ) {
 	my ($iserror, $iscommon) = (0,0);
 	my $track_common_alleles_ref = [(0) x $naltalleles];
 	
-	checkFrequencies($freqinOutside, $mafcutoff, 'ESP1KG', $track_common_alleles_ref);
-	if ($debugmode >= 4) { print STDOUT "after checking ESP1KG, common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG			
-	checkFrequencies($freqinExAC, $exaccutoff, 'ExAC', $track_common_alleles_ref);
-	if ($debugmode >= 4) { print STDOUT "after checking ExAC, common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG			
+	checkFrequencies($freqinOutside, $mafcutoff, 'ESP1KGExAC', $track_common_alleles_ref);
+	if ($debugmode >= 4) { print STDOUT "after checking ESP1KGExAC, common allele status: @{$track_common_alleles_ref}\n"; }			## DEBUG					
 
 	# if frequencies for all alleles at this locus are above cutoff in at least one control population, reject		
 	my $freqcheck;
@@ -400,8 +398,8 @@ while ( <$input_filehandle> ) {
 			if ($inputfiletype ne 'vcf') {
 				$data = join("	", @line);
 			} else {
-				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$freqinExAC	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
+				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -678,6 +676,10 @@ sub checkandstoreOptions {
 		%GVStoexclude = map {$_ => 1} split(',', $excludeGVSfunction);
 	}
 	
+	if (! -e $inputfile) {
+		pod2usage(-exitval=>2, -verbose=>1, -message => "$0: --input $inputfile does not exist\n");
+	}
+	
 	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
 		$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
@@ -697,8 +699,7 @@ sub printParamstoLog {
 	print $log_filehandle "Missing genotypes/no calls are counted as: $isNhit\n";
 	print $log_filehandle "Excluding all variants with annotations: $gvstoexclude_string\n";
 	print $log_filehandle "Only allow variants with GATK filter: $allowedgatk_string\n";
-	print $log_filehandle "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes\n";
-	print $log_filehandle "Excluding variants with MAF>$exaccutoff in ExAC\n";
+	print $log_filehandle "Excluding variants with MAF>$mafcutoff in ESP and/or 1000 Genomes and/or ExAC\n";
 	print $log_filehandle "Excluding variants with frequency>=$cmgfreqcutoff in CMG subjects (likely systematic error)\n";
 	print $log_filehandle "Special analysis? $inheritmodel\n";
 }
@@ -753,7 +754,7 @@ sub parseHeader {
 	# add code to check for undefined columns
 	##
 	my @header = @_;
-	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, $vepannocol, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
+	my ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $sourceDBpopfreq, @genotypecolumns, @qualcolumns, @dpcolumns, @keepcolumns, @genotypeorder);
 	
 	print $log_filehandle "Samples in exome data:\n";
 	print $log_filehandle "FID\tIID\tFATHER\tMOTHER\tSEX\tRELATION\tDESIREDGENO\n";
@@ -792,13 +793,11 @@ sub parseHeader {
 			$gatkfiltercol = $i;
 		} elsif ($columnname =~ /FILTER/i) {
 			$gatkfiltercol = $i;
-		} elsif ($columnname =~ /ExAC.AF/i) {
-			$freqinExACcol = $i;
-		} elsif ($columnname =~ /ExAC.CSQ/i) {
-			$vepannocol = $i;
+		} elsif ($columnname =~ /AFPOP.source/i) {
+			$sourceDBpopfreq = $i;
 		}
 	}
-	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $freqinExACcol, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns, \@genotypeorder);
+	return ($polyphencol, $phastconscol, $gerpcol, $gatkfiltercol, $freqinCMGcol, $freqinOutsidecol, $sourceDBpopfreq, \@genotypecolumns, \@qualcolumns, \@dpcolumns, \@keepcolumns, \@genotypeorder);
 }
 
 sub passGATKfilters {
@@ -1105,7 +1104,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $vepanno, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -1122,7 +1121,7 @@ sub parse_vcf_byline {
 	$cdnapos = ${$infofields_ref}{'CDP'};
 	$freqinCMG = ${$infofields_ref}{'AFCMG'};
 	$freqinOutside = ${$infofields_ref}{'AFPOP'};
-	$vepanno = ${$infofields_ref}{'ExAC.CSQ'};
+	$DBsourceOutside = ${$infofields_ref}{'AFPOP.DB'};
 	$clinical = ${$infofields_ref}{'CA'};
 	$kegg = ${$infofields_ref}{'KP'};
 	$caddphred = ${$infofields_ref}{'cPhred'};
@@ -1131,13 +1130,6 @@ sub parse_vcf_byline {
 	
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
-	
-	
-	if (!exists ${$infofields_ref}{'ExAC.AF'}) {
-		$freqinExAC = 0;
-	} else {
-		$freqinExAC = ${$infofields_ref}{'ExAC.AF'};
-	}
 	
 	my @format = split(":", $line[8]);
 	my ($gtcolnum, $dpcolnum, $gqcolnum, $pindel_ad);
@@ -1199,9 +1191,9 @@ sub parse_vcf_byline {
 		}
 	}
 	if ($debugmode >= 4) {
-		print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, OMIM: $geneMIM, $phenoOMIM\n";			## DEBUG
+		print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";			## DEBUG
 	}
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $freqinExAC, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 }
 
 
@@ -1219,7 +1211,7 @@ sub checkFrequencies {
 			$count_rare_alleles++;
 			next;
 		} 
-		if ($source eq 'CMG' | $source eq 'ESP1KG') {
+		if ($source eq 'CMG' | $source eq 'ESP1KGExAC') {
 			$reffreq = $reffreq/100;			# store allele freq as percentage, so convert back to frequency
 		}
 		if ($reffreq <= $cutoff) {
