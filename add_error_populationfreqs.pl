@@ -27,7 +27,8 @@ if (!defined $inputfile) {
 
 
 my $commonvarpath = '/net/grc/vol1/mendelian_projects/mendelian_analysis/references';
-my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.2013-11-26.tsv.gz";
+my $errorMAFfile = "$commonvarpath/errorMaxAltAlleleFreq.2015-02-16.tsv.gz";
+# my $errorMAFfile = "MYH3.tsv.gz";
 
 if (!-e $errorMAFfile) {
 	die "Cannot read from reference data: $errorMAFfile :$?\n";
@@ -60,6 +61,7 @@ if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of 
 			if ($headerline =~ "##fileformat=VCFv4") {
 				print OUT "$headerline\n";
 				print OUT '##INFO=<ID=AFPOP,Number=1,Type=Float,Description="Percent alt allele freq in outbred populations">'."\n";
+				print OUT '##INFO=<ID=AFPOP.DB,Number=1,Type=String,Description="Source database for AFPOP value (highest observed alt allele frequency in outbred population)">'."\n";
 				print OUT '##INFO=<ID=AFCMG,Number=1,Type=Float,Description="Percent alt allele freq in exomes sequenced by CMG">'."\n";
 				##INFO=<ID=HA,Number=1,Type=Float,Description="AfricanHapMapFreq">
 			} else {
@@ -107,26 +109,29 @@ while ( <FILE> ) {
 		$workingchr = $chr;
 	} 
 	
-	my (@errorfreq, @maxpopmaf);
+	my (@errorfreq, @maxpopmaf, @popmafDB);
 
 	my @altalleles = split(",", $alt);									# in case there are multi-allelic SNPs
 	for (my $i=0; $i<=$#altalleles; $i++) {
 		my $lookup = "$pos.$ref.$altalleles[$i]";
 		if (exists $chr_contents{$lookup}{'pop'}) {
 			push(@errorfreq, sprintf("%.4f", $chr_contents{$lookup}{'error'}));
+			push(@popmafDB, $chr_contents{$lookup}{'DB'});
 			push(@maxpopmaf, sprintf("%.4f", $chr_contents{$lookup}{'pop'}));
 		} else {
 			push(@errorfreq, '0');
 			push(@maxpopmaf, '0');
+			push(@popmafDB, '');
 		}
 	}
 	
 	my $afpop = join(",", @maxpopmaf);
+	my $afpopDB = join(",", @popmafDB);
 	my $afcmg = join(",", @errorfreq);
 	
 	if ($inputfiletype eq 'vcf') {
 		print OUT join("\t", @line[0..($vcfinfocol-1)]);
-		print OUT "\t$line[$vcfinfocol];AFCMG=$afcmg;AFPOP=$afpop\t";
+		print OUT "\t$line[$vcfinfocol];AFCMG=$afcmg;AFPOP=$afpop;AFPOP.DB=$afpopDB\t";
 		print OUT join("\t", @line[($vcfinfocol+1)..$#line])."\n";
 	} else {
 		print OUT join("\t", @line)."$afcmg\t$afpop\n";
@@ -166,10 +171,11 @@ sub readDataTabix {
 	foreach (@popdata) {
 		$_ =~ s/\s+$//;					# Remove line endings
 		# print "storing $_\n";
-		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside) = split("\t", $_);
+		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside, $DBsourceOutside) = split("\t", $_);
 		my $lookup = "$varstart.$ref.$alt";
 		$maxmafs{$lookup}{'error'} = $freqinCMG;
 		$maxmafs{$lookup}{'pop'} = $freqinOutside;
+		$maxmafs{$lookup}{'DB'} = $DBsourceOutside;
 		# print "stored $maxmafs{$lookup}{'pop'} in $lookup\n";
 	}
 	return \%maxmafs;
@@ -202,10 +208,11 @@ sub readData {
 	foreach (@popdata) {
 		$_ =~ s/\s+$//;					# Remove line endings
 		# print "storing $_\n";
-		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside) = split("\t", $_);
+		my ($chr, $varstart, $varend, $ref, $alt, $freqinCMG, $freqinOutside, $DBsourceOutside) = split("\t", $_);
 		my $lookup = "$varstart.$ref.$alt";
 		$maxmafs{$lookup}{'error'} = $freqinCMG;
 		$maxmafs{$lookup}{'pop'} = $freqinOutside;
+		$maxmafs{$lookup}{'DB'} = $DBsourceOutside;
 		# print "stored $maxmafs{$lookup}{'pop'} in $lookup\n";
 	}
 	return \%maxmafs;
