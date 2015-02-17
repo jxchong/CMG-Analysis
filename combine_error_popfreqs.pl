@@ -69,7 +69,8 @@ close OUT;
 
 
 
-
+# to generate confidence intervals for the allele frequencies, try:
+# http://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval Wilson score interval with continuity correction
 
 
 
