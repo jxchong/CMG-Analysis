@@ -60,7 +60,7 @@ if ($inputfiletype eq 'vcf') {						# skip all the metadata lines at the top of 
 		if ($headerline !~ /^#CHROM/) {
 			if ($headerline =~ "##fileformat=VCFv4") {
 				print OUT "$headerline\n";
-				print OUT '##INFO=<ID=AFPOP,Number=1,Type=Float,Description="Percent alt allele freq in outbred populations">'."\n";
+				print OUT '##INFO=<ID=AFPOP,Number=1,Type=Float,Description="Percent alt allele freq in outbred populations in ExAC, ESP6500, or 1000 Genomes phase 3 (errorMaxAltAlleleFreq.2015-02-16)">'."\n";
 				print OUT '##INFO=<ID=AFPOP.DB,Number=1,Type=String,Description="Source database for AFPOP value (highest observed alt allele frequency in outbred population)">'."\n";
 				print OUT '##INFO=<ID=AFCMG,Number=1,Type=Float,Description="Percent alt allele freq in exomes sequenced by CMG">'."\n";
 				##INFO=<ID=HA,Number=1,Type=Float,Description="AfricanHapMapFreq">

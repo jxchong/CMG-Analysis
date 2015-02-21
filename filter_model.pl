@@ -14,7 +14,7 @@ use Pod::Usage;
 use Moose;
 
 my $help = 0;
-my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
+my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode, $logfile);
 my ($allowedGATKfilters_ref, $GVStoexclude_ref);
 GetOptions(
 	'in=s' => \$inputfile, 
@@ -27,7 +27,6 @@ GetOptions(
 	'excludefunction=s' => \$excludeGVSfunction,
 	'model:s' => \$inheritmodel,
 	'mafcutoff:f' => \$mafcutoff,
-	'exaccutoff:f' => \$exaccutoff,
 	'errorcutoff:f' => \$cmgfreqcutoff,
 	'dp:f' => \$mindp,
 	'gq:f' => \$minGQ,
@@ -37,8 +36,8 @@ GetOptions(
 pod2usage(-verbose=>1, -exitval=>1) if $help;
 
 ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-	$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
-	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
+	$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+	$debugmode, $allowedGATKfilters_ref, $GVStoexclude_ref, $logfile) = checkandstoreOptions($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, $inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, $debugmode);
 my %allowedGATKfilters = %{$allowedGATKfilters_ref};
 my %GVStoexclude = %{$GVStoexclude_ref};
 
@@ -605,7 +604,7 @@ sub checkFamiliesforHits {																				# make sure required number of hit
 
 sub checkandstoreOptions {
 	my ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode) = @_;
 	my (%allowedGATKfilters, %GVStoexclude);
 	
@@ -641,9 +640,6 @@ sub checkandstoreOptions {
 
 	if (!defined $mafcutoff) {
 		$mafcutoff = 0.01;
-	}
-	if (!defined $exaccutoff) {
-		$exaccutoff = 0.01;
 	}
 	if (!defined $cmgfreqcutoff) {
 		$cmgfreqcutoff = 0.05;
@@ -682,7 +678,7 @@ sub checkandstoreOptions {
 	
 	my $logfile = "$outputfile.log";
 	return ($inputfile, $outputfile, $subjectdeffile, $minhits, $filters, $isNhit, 
-		$inheritmodel, $mafcutoff, $exaccutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
+		$inheritmodel, $mafcutoff, $excludeGVSfunction, $cmgfreqcutoff, $mindp, $minGQ, $maxmismatchesperfamily, 
 		$debugmode, \%allowedGATKfilters, \%GVStoexclude, $logfile);
 }
 
