@@ -113,7 +113,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	transcripts	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	OutsideFreqSourceDB	clinAssoc	geneMIM	phenoOMIM	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	transcripts	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	OutsideFreqSourceDB	clinAssoc	geneMIM	phenoOMIM	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -398,7 +398,7 @@ while ( <$input_filehandle> ) {
 				$data = join("	", @line);
 			} else {
 				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$transcripts	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$transcripts	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
