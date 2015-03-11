@@ -113,7 +113,7 @@ my $countuniquefamilies = scalar(keys %countuniquefamilies_hash);
 if ($inputfiletype ne 'vcf') {
 	print $output_filehandle "#".join("	", @header[@keepcolumns])."	FamilieswHits\n";
 } else {
-	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	OutsideFreqSourceDB	clinAssoc	geneMIM	phenoOMIM	KEGG	";
+	print $output_filehandle "#chr	pos	pos	type	ref	alt	GATKflag	geneList	rsID	functionGVS	aminoacids	proteinPos	cDNAPos	transcripts	PhastCons	GERP	Polyphen	CADD	PrctAltFreqinCMG	PrctAltFreqOutside	OutsideFreqSourceDB	clinAssoc	geneMIM	phenoOMIM	KEGG	";
 	print $output_filehandle join("\t", @orderedsubjects);
 	# print $output_filehandle join("Gtype	", @orderedsubjects)."Gtype	";
 	# print $output_filehandle join("DP	", @orderedsubjects)."DP	";
@@ -134,7 +134,7 @@ while ( <$input_filehandle> ) {
 	my $countmatches = 0;
 	my ($chr, $pos, $vartype, $ref, $alt, $filterset);
 	my ($subjgeno_ref, $subjdps_ref, $subjquals_ref, @subjectgenotypes, @subjectquals, @subjectdps);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 	
 	if ($debugmode >= 3) {
 		print STDOUT "\n";
@@ -150,7 +150,7 @@ while ( <$input_filehandle> ) {
 			print STDOUT "\nLooking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $freqinCMG, $freqinOutside\n";
 		}
 	} elsif ($inputfiletype eq 'vcf') {
-		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM) = parse_vcf_byline(\@genotypecolumns, @line);
+		($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $subjgeno_ref, $subjdps_ref, $subjquals_ref, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM) = parse_vcf_byline(\@genotypecolumns, @line);
 		# if ($debugmode >= 4) {
 		# 	if ($chr < 2) {
 		# 		next;
@@ -159,7 +159,7 @@ while ( <$input_filehandle> ) {
 		# 	}			
 		# }
 		if ($debugmode >= 3) {
-			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";
+			print STDOUT "Looking at: $chr, $pos, $vartype, $ref, $alt, $filterset, $gene, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";
 		}
 	} else {
 		die "Input file ($inputfile) isn't an SSAnnotation or SeattleSeqAnnotation134 file\n";
@@ -398,7 +398,7 @@ while ( <$input_filehandle> ) {
 				$data = join("	", @line);
 			} else {
 				# $data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$kegg	".join("	", (@subjectgenotypes, @subjectdps, @subjectquals));	
-				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
+				$data = "$chr	$pos	$pos	$vartype	$ref	$alt	$filterset	$gene	$rsid	$functionimpact	$aminoacids	$proteinpos	$cdnapos	$transcripts	$phastcons	$gerp	$polyphen	$caddphred	$freqinCMG	$freqinOutside	$DBsourceOutside	$clinical	$geneMIM	$phenoOMIM	$kegg\t".join("\t", @subjectgenotypes);	
 			}
 			if ($inheritmodel eq 'unique') {
 				if ($countcarriers <= 1) {																				# if 0(only the original subject if DP/GQ not available) or 1 carriers
@@ -1100,7 +1100,7 @@ sub parse_SSAnnotation134_byline {
 sub parse_vcf_byline {
 	my ($subj_columns_ref, @line) = @_;
 	my (@subjectquals, @subjectdps, @subjectgenotypes);
-	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	my ($gene, $functionimpact, $gerp, $polyphen, $phastcons, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 			
 	my ($chr, $pos, $rsid, $ref, $alt) = ($line[0], $line[1], $line[2], $line[3], $line[4]);
 	my $vartype = determinevartype($ref, $alt);
@@ -1115,6 +1115,7 @@ sub parse_vcf_byline {
 	$aminoacids = ${$infofields_ref}{'AAC'};
 	$proteinpos = ${$infofields_ref}{'PP'};
 	$cdnapos = ${$infofields_ref}{'CDP'};
+	$transcripts = ${$infofields_ref}{'GM'};
 	$freqinCMG = ${$infofields_ref}{'AFCMG'};
 	$freqinOutside = ${$infofields_ref}{'AFPOP'};
 	$DBsourceOutside = ${$infofields_ref}{'AFPOP.DB'};
@@ -1187,9 +1188,9 @@ sub parse_vcf_byline {
 		}
 	}
 	if ($debugmode >= 4) {
-		print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";			## DEBUG
+		print STDOUT "$chr, $pos, $vartype, $ref, $alt, $filterset, $gene, @subjectgenotypes, @subjectdps, @subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, OMIM: $geneMIM, $phenoOMIM\n";			## DEBUG
 	}
-	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
+	return ($chr, $pos, $vartype, $ref, $alt, $filterset, $gene, \@subjectgenotypes, \@subjectdps, \@subjectquals, $functionimpact, $gerp, $polyphen, $phastcons, $rsid, $aminoacids, $proteinpos, $cdnapos, $transcripts, $freqinCMG, $freqinOutside, $DBsourceOutside, $clinical, $kegg, $caddphred, $geneMIM, $phenoOMIM);
 }
 
 
