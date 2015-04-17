@@ -302,7 +302,7 @@ sub store_maxpopaltAF {
 		my $lookup = "$ref.$altalleles[$altallele_idx]";
 		my $maxpopaltAF = $popaltAFs_ref->{$altalleles[$altallele_idx]}{'altAF'};
 		my $maxpopname = $popaltAFs_ref->{$altalleles[$altallele_idx]}{'POPsource'};
-		if (!defined $maxaltAFs_ref->{$varpos}{$lookup}{'pop'}) {
+		if (!defined $maxaltAFs_ref->{$varpos}{$lookup}{'pop'} && !defined $maxaltAFs_ref->{$varpos}{$lookup}{'DB'} = $DBname) {
 			$maxaltAFs_ref->{$varpos}{$lookup}{'pop'} = $maxpopaltAF;
 			$maxaltAFs_ref->{$varpos}{$lookup}{'DB'} = $DBname;
 			$maxaltAFs_ref->{$varpos}{$lookup}{'POPsource'} = $maxpopname;

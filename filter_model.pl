@@ -1124,7 +1124,13 @@ sub parse_vcf_byline {
 	$caddphred = ${$infofields_ref}{'cPhred'};
 	$geneMIM = ${$infofields_ref}{'geneMIM'};
 	$phenoOMIM = ${$infofields_ref}{'phenoOMIM'};
-	
+	if (!defined ${$infofields_ref}{'cPhred'}) {
+		if (defined ${$infofields_ref}{'CADD'}) {
+			$caddphred = ${$infofields_ref}{'CADD'};
+		} else {
+			$caddphred = '.';
+		}
+	}
 	# $inUWexomes = $line[16];
 	# $UWexomescovered = $line[17];
 	
