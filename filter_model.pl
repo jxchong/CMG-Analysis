@@ -665,7 +665,7 @@ sub checkandstoreOptions {
 		%allowedGATKfilters = map {$_ => 1} split(',', $filters);
 	} 
 	if ($excludeGVSfunction eq 'default') {
-		%GVStoexclude = map {$_ => 1} qw(intron intergenic utr utr-3 utr-5 near-gene-3 near-gene-5 none coding-synonymous synonymous 3-prime-UTR 5-prime-UTR downstream-gene upstream-gene non-coding-exon);
+		%GVStoexclude = map {$_ => 1} qw(intron intergenic near-gene-3 near-gene-5 none coding-synonymous synonymous downstream-gene upstream-gene non-coding-exon);
 	} elsif ($excludeGVSfunction eq 'NA')  {
 		%GVStoexclude = map {$_ => 1} qw(NA);
 	} else {
@@ -1324,7 +1324,7 @@ perl B<filter_model.pl> I<[options]>
 =item B<--excludefunction> I<list>
 	
 	GVS variant function classes to be excluded
-	Possible values: comma separated list with no spaces OR 'default' (default=intron,intergenic,utr,utr-3,utr-5,near-gene-3,near-gene-5,none) OR 'NA'
+	Possible values: comma separated list with no spaces OR 'default' (default=intron,intergenic,near-gene-3,near-gene-5,none) OR 'NA'
 		
 =item B<--mafcutoff> I<value>
 
